@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import { open, save } from "@tauri-apps/plugin-dialog";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { tauriApi } from "../lib/tauri";
 import { useSketchStore } from "../store/useSketchStore";
@@ -16,7 +17,7 @@ export default function Gallery({ onOpen }: GalleryProps) {
     tauriApi.listSketches().then(setSketches);
   }, [setSketches]);
 
-  // Handle drag-drop of .js files onto the window
+  // 拖拽 .js 文件到窗口
   useEffect(() => {
     let cleanup: (() => void) | undefined;
     getCurrentWebviewWindow()
@@ -31,9 +32,7 @@ export default function Gallery({ onOpen }: GalleryProps) {
           addSketch(name);
         }
       })
-      .then((unlisten) => {
-        cleanup = unlisten;
-      });
+      .then((unlisten) => { cleanup = unlisten; });
     return () => cleanup?.();
   }, [addSketch]);
 
@@ -47,15 +46,70 @@ export default function Gallery({ onOpen }: GalleryProps) {
     onOpen(name);
   };
 
+  const handleOpenFolder = () => tauriApi.openSketchesDir();
+
+  const handleExport = async () => {
+    if (sketches.length === 0) return;
+    const dest = await save({
+      defaultPath: "p5js-sketches.zip",
+      filters: [{ name: "ZIP", extensions: ["zip"] }],
+    });
+    if (!dest) return;
+    await tauriApi.exportSketches(dest);
+  };
+
+  const handleImportZip = async () => {
+    const selected = await open({
+      filters: [{ name: "ZIP", extensions: ["zip"] }],
+      multiple: false,
+    });
+    if (!selected || typeof selected !== "string") return;
+    const imported = await tauriApi.importSketchesZip(selected);
+    if (imported.length > 0) {
+      // 重新拉取列表保证顺序一致
+      const all = await tauriApi.listSketches();
+      setSketches(all);
+    }
+  };
+
   return (
     <div className="flex flex-col h-screen bg-gray-900">
       {/* Header */}
       <div className="flex items-center justify-between px-6 py-4 border-b border-gray-700 shrink-0">
         <div>
           <h1 className="text-lg font-bold text-white">P5JS Studio</h1>
-          <p className="text-xs text-gray-500 mt-0.5">{sketches.length} sketch{sketches.length !== 1 ? "es" : ""}</p>
+          <p className="text-xs text-gray-500 mt-0.5">
+            {sketches.length} sketch{sketches.length !== 1 ? "es" : ""}
+          </p>
         </div>
-        <div className="flex gap-3">
+
+        <div className="flex items-center gap-2">
+          {/* 管理操作 */}
+          <button
+            onClick={handleOpenFolder}
+            title="在 Finder 中打开存储目录"
+            className="text-gray-400 hover:text-white hover:bg-gray-700 px-3 py-2 rounded text-sm transition-colors"
+          >
+            📁 Open Folder
+          </button>
+          <button
+            onClick={handleImportZip}
+            title="从 ZIP 导入草图"
+            className="text-gray-400 hover:text-white hover:bg-gray-700 px-3 py-2 rounded text-sm transition-colors"
+          >
+            ↑ Import ZIP
+          </button>
+          <button
+            onClick={handleExport}
+            disabled={sketches.length === 0}
+            title="将所有草图导出为 ZIP"
+            className="text-gray-400 hover:text-white hover:bg-gray-700 disabled:opacity-30 disabled:cursor-not-allowed px-3 py-2 rounded text-sm transition-colors"
+          >
+            ↓ Export ZIP
+          </button>
+
+          <div className="w-px h-5 bg-gray-600 mx-1" />
+
           <UploadButton onUploaded={handleUploaded} />
           <button
             onClick={() => onOpen(undefined)}
