@@ -1,4 +1,3 @@
-// p5.min.js is inlined at build time via Vite's ?raw import — no CDN, works offline
 import p5Source from "p5/lib/p5.min.js?raw";
 
 export function buildSrcdoc(userCode: string): string {
@@ -23,6 +22,18 @@ export function buildSrcdoc(userCode: string): string {
       return true;
     };
     ${userCode}
+    // Auto-capture canvas thumbnail after 1.5s and send to parent
+    setTimeout(function() {
+      try {
+        var c = document.querySelector('canvas');
+        if (c) {
+          window.parent.postMessage(
+            { type: 'p5studio_thumbnail', data: c.toDataURL('image/png') },
+            '*'
+          );
+        }
+      } catch(e) {}
+    }, 1500);
   </script>
 </body>
 </html>`;

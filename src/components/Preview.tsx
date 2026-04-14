@@ -4,18 +4,32 @@ import { buildSrcdoc } from "../lib/p5source";
 interface PreviewProps {
   code: string;
   runTrigger: number;
+  onThumbnail?: (dataUrl: string) => void;
 }
 
-export default function Preview({ code, runTrigger }: PreviewProps) {
+export default function Preview({ code, runTrigger, onThumbnail }: PreviewProps) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
 
+  // Run sketch when triggered
   useEffect(() => {
-    if (runTrigger === 0) return; // 不自动运行，等用户手动触发
+    if (runTrigger === 0) return;
     if (iframeRef.current) {
       iframeRef.current.srcdoc = buildSrcdoc(code);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [runTrigger]);
+
+  // Listen for thumbnail captured inside iframe via postMessage
+  useEffect(() => {
+    if (!onThumbnail) return;
+    const handler = (e: MessageEvent) => {
+      if (e.data?.type === "p5studio_thumbnail") {
+        onThumbnail(e.data.data as string);
+      }
+    };
+    window.addEventListener("message", handler);
+    return () => window.removeEventListener("message", handler);
+  }, [onThumbnail]);
 
   if (runTrigger === 0) {
     return (
