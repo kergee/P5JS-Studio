@@ -6,10 +6,11 @@ interface SketchCardProps {
   name: string;
   onOpen: () => void;
   onDelete: () => void;
+  onMove: () => void;
   theme: ColorTheme;
 }
 
-export default function SketchCard({ name, onOpen, onDelete, theme }: SketchCardProps) {
+export default function SketchCard({ name, onOpen, onDelete, onMove, theme }: SketchCardProps) {
   const [thumbnail, setThumbnail] = useState<string | null>(null);
   const [notes, setNotes] = useState("");
   const light = isLightTheme(theme);
@@ -75,6 +76,19 @@ export default function SketchCard({ name, onOpen, onDelete, theme }: SketchCard
               }`}
             >
               Edit
+            </button>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onMove();
+              }}
+              className={`text-xs px-2 py-0.5 rounded transition-colors ${
+                light
+                  ? "text-gray-500 hover:text-gray-900 hover:bg-gray-100"
+                  : "text-gray-400 hover:text-white hover:bg-gray-700"
+              }`}
+            >
+              Move
             </button>
             <button
               onClick={(e) => {

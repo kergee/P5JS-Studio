@@ -5,9 +5,14 @@ import { tauriApi } from "../lib/tauri";
 interface UploadButtonProps {
   onUploaded: (name: string) => void;
   theme: ColorTheme;
+  folderPath: string;
 }
 
-export default function UploadButton({ onUploaded, theme }: UploadButtonProps) {
+function joinPath(parent: string, name: string) {
+  return parent ? `${parent}/${name}` : name;
+}
+
+export default function UploadButton({ onUploaded, theme, folderPath }: UploadButtonProps) {
   const light = isLightTheme(theme);
 
   const handleClick = async () => {
@@ -17,11 +22,12 @@ export default function UploadButton({ onUploaded, theme }: UploadButtonProps) {
     });
     if (!selected || typeof selected !== "string") return;
 
-    const filename = selected.split("/").pop() ?? selected.split("\\").pop() ?? "sketch";
+    const filename = selected.split(/[\\/]/).pop() ?? "sketch";
     const name = filename.replace(/\.js$/i, "").replace(/[^a-zA-Z0-9_-]/g, "_");
 
-    await tauriApi.importSketch(selected, name);
-    onUploaded(name);
+    const sketchPath = joinPath(folderPath, name);
+    await tauriApi.importSketch(selected, sketchPath);
+    onUploaded(sketchPath);
   };
 
   return (
