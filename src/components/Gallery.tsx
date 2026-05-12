@@ -15,6 +15,8 @@ interface GalleryProps {
   onToggleTheme: () => void;
   language: Language;
   onLanguageChange: (language: Language) => void;
+  currentPath: string;
+  onPathChange: (path: string) => void;
 }
 
 const emptyListing: DirectoryListing = { folders: [], sketches: [] };
@@ -43,9 +45,10 @@ export default function Gallery({
   onToggleTheme,
   language,
   onLanguageChange,
+  currentPath,
+  onPathChange,
 }: GalleryProps) {
   const { setSketches, addSketch, removeSketch } = useSketchStore();
-  const [currentPath, setCurrentPath] = useState("");
   const [listing, setListing] = useState<DirectoryListing>(emptyListing);
   const [showHelp, setShowHelp] = useState(false);
   const [showLanguageMenu, setShowLanguageMenu] = useState(false);
@@ -123,7 +126,7 @@ export default function Gallery({
     if (!name || name === folderName) return;
     const renamed = await tauriApi.renameFolder(joinPath(currentPath, folderName), name);
     if (currentPath === joinPath(parentPath(joinPath(currentPath, folderName)), folderName)) {
-      setCurrentPath(renamed);
+      onPathChange(renamed);
     }
     refresh();
   };
@@ -242,7 +245,7 @@ export default function Gallery({
           </div>
           <div className="flex items-center gap-1 mt-1 text-xs">
             <button
-              onClick={() => setCurrentPath("")}
+              onClick={() => onPathChange("")}
               className={`${subtleButtonClass} px-1.5 py-0.5 rounded transition-colors`}
             >
               {t.home}
@@ -253,7 +256,7 @@ export default function Gallery({
                 <span key={path} className="flex items-center gap-1">
                   <span className={light ? "text-gray-300" : "text-gray-600"}>/</span>
                   <button
-                    onClick={() => setCurrentPath(path)}
+                    onClick={() => onPathChange(path)}
                     className={`${subtleButtonClass} px-1.5 py-0.5 rounded transition-colors`}
                   >
                     {part}
@@ -324,7 +327,7 @@ export default function Gallery({
                 }`}
               >
                 <button
-                  onClick={() => setCurrentPath(joinPath(currentPath, name))}
+                  onClick={() => onPathChange(joinPath(currentPath, name))}
                   className={`h-32 w-full flex items-center justify-center ${
                     light ? "bg-amber-50 text-amber-700" : "bg-amber-950 text-amber-300"
                   }`}
@@ -334,7 +337,7 @@ export default function Gallery({
                 <div className="p-3">
                   <div className="flex items-center justify-between gap-2">
                     <button
-                      onClick={() => setCurrentPath(joinPath(currentPath, name))}
+                      onClick={() => onPathChange(joinPath(currentPath, name))}
                       className={`text-sm truncate font-medium text-left ${
                         light ? "text-gray-800 hover:text-black" : "text-gray-200 hover:text-white"
                       }`}

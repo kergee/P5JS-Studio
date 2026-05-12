@@ -11,6 +11,7 @@ P5JS Studio is a local desktop IDE for [p5.js](https://p5js.org) creative coding
 - File-manager style gallery with folders, breadcrumbs, and sketch cards.
 - Nested folders for organizing sketches by class, topic, assignment, or project.
 - A folder with `meta.json` is treated as a sketch; other folders are treated as categories.
+- Returning from the editor keeps the current gallery folder and breadcrumb path.
 - Auto-captured thumbnail 1.5 seconds after you run a sketch.
 - Notes excerpt on each sketch card.
 - Drag a `.js` file onto the window to import it.
@@ -29,6 +30,7 @@ P5JS Studio is a local desktop IDE for [p5.js](https://p5js.org) creative coding
 - All files in one sketch are concatenated in tab order and share the same global p5 scope.
 - Per-sketch notes panel.
 - Rename a sketch by clicking its name in the toolbar.
+- Run automatically saves the current sketch files and notes before starting the preview.
 - p5-aware autocomplete for common functions, variables, constants, and lifecycle templates.
 - Lightweight editor diagnostics for syntax errors and common p5 function typos.
 - Format the current file with Prettier from the toolbar or `Shift+Alt+F`.
@@ -190,8 +192,8 @@ You can trigger it in two ways:
 2. Push a version tag:
 
 ```bash
-git tag v1.2.0
-git push origin v1.2.0
+git tag v1.2.1
+git push origin v1.2.1
 ```
 
 Tag pushes matching `v*` create a draft GitHub release through `tauri-apps/tauri-action`.
@@ -203,8 +205,8 @@ The current workflow creates a draft GitHub Release with a fixed download sectio
 A practical release flow is:
 
 ```bash
-git tag v1.2.0
-git push origin v1.2.0
+git tag v1.2.1
+git push origin v1.2.1
 ```
 
 Then open **GitHub > Releases**, edit the draft release, click **Generate release notes**, review the generated text, and publish the release.
@@ -217,8 +219,8 @@ If you want a repository changelog file as well, keep a `CHANGELOG.md` and copy 
 
 1. Click **+ New Sketch** in the gallery.
 2. Write p5.js code in the editor.
-3. Press **Run** or `Ctrl+Enter`.
-4. Press **Save** or `Ctrl+S`.
+3. Press **Run** or `Ctrl+Enter`. Running saves the sketch first.
+4. Press **Save** or `Ctrl+S` whenever you want to save without running.
 
 ### Use Multiple Files
 
@@ -226,7 +228,7 @@ Click **+ Add File** in the tab bar. Files are saved inside the sketch folder an
 
 ### Organize with Folders
 
-Use **New Folder** to create category folders, then create sketches inside them. Folder breadcrumbs let you navigate back to parent folders. Use **Move** on a sketch card to move it to another folder.
+Use **New Folder** to create category folders, then create sketches inside them. Folder breadcrumbs let you navigate back to parent folders. If you open a sketch from a subfolder and return to the gallery, the same folder stays open. Use **Move** on a sketch card to move it to another folder.
 
 ### Use Images
 
@@ -251,6 +253,7 @@ Use `console.log(...)` in your p5 code and check the Debug Console under the pre
 - Optional p5 runtime switching, including a future p5 v2 compatibility mode.
 - More advanced release note automation.
 - More complete editor diagnostics.
+- Configurable autosave behavior and a clearer save status indicator.
 
 ## License
 
