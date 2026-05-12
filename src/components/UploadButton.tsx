@@ -1,4 +1,5 @@
 import { open } from "@tauri-apps/plugin-dialog";
+import { Language, text } from "../lib/language";
 import { ColorTheme, isLightTheme } from "../lib/theme";
 import { tauriApi } from "../lib/tauri";
 
@@ -6,14 +7,16 @@ interface UploadButtonProps {
   onUploaded: (name: string) => void;
   theme: ColorTheme;
   folderPath: string;
+  language: Language;
 }
 
 function joinPath(parent: string, name: string) {
   return parent ? `${parent}/${name}` : name;
 }
 
-export default function UploadButton({ onUploaded, theme, folderPath }: UploadButtonProps) {
+export default function UploadButton({ onUploaded, theme, folderPath, language }: UploadButtonProps) {
   const light = isLightTheme(theme);
+  const t = text[language];
 
   const handleClick = async () => {
     const selected = await open({
@@ -39,7 +42,7 @@ export default function UploadButton({ onUploaded, theme, folderPath }: UploadBu
           : "bg-gray-700 hover:bg-gray-600 active:bg-gray-800 text-white"
       }`}
     >
-      Upload .js
+      {t.uploadJs}
     </button>
   );
 }

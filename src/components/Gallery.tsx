@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
+import { Language, text } from "../lib/language";
 import { DirectoryListing, tauriApi } from "../lib/tauri";
 import { ColorTheme, isLightTheme } from "../lib/theme";
 import { useSketchStore } from "../store/useSketchStore";
@@ -12,6 +13,8 @@ interface GalleryProps {
   onOpen: (name?: string) => void;
   theme: ColorTheme;
   onToggleTheme: () => void;
+  language: Language;
+  onLanguageChange: (language: Language) => void;
 }
 
 const emptyListing: DirectoryListing = { folders: [], sketches: [] };
@@ -30,18 +33,27 @@ function sanitizeName(name: string) {
   return name.replace(/[\\/:*?"<>|]/g, "").trim();
 }
 
-function pathLabel(path: string) {
-  return path || "Home";
+function pathLabel(path: string, homeLabel: string) {
+  return path || homeLabel;
 }
 
-export default function Gallery({ onOpen, theme, onToggleTheme }: GalleryProps) {
+export default function Gallery({
+  onOpen,
+  theme,
+  onToggleTheme,
+  language,
+  onLanguageChange,
+}: GalleryProps) {
   const { setSketches, addSketch, removeSketch } = useSketchStore();
   const [currentPath, setCurrentPath] = useState("");
   const [listing, setListing] = useState<DirectoryListing>(emptyListing);
+  const [showHelp, setShowHelp] = useState(false);
+  const [showLanguageMenu, setShowLanguageMenu] = useState(false);
   const [moveTargets, setMoveTargets] = useState<string[]>([]);
   const [movingSketch, setMovingSketch] = useState<string | null>(null);
   const [moveDestination, setMoveDestination] = useState("");
   const light = isLightTheme(theme);
+  const t = text[language];
   const subtleButtonClass = light
     ? "text-gray-600 hover:text-gray-950 hover:bg-gray-100"
     : "text-gray-400 hover:text-white hover:bg-gray-700";
@@ -96,7 +108,7 @@ export default function Gallery({ onOpen, theme, onToggleTheme }: GalleryProps) 
   const handleOpenFolder = () => tauriApi.openSketchesDir();
 
   const handleNewFolder = async () => {
-    const raw = prompt("New folder name");
+    const raw = prompt(t.newFolderPrompt);
     if (!raw) return;
     const name = sanitizeName(raw);
     if (!name) return;
@@ -105,7 +117,7 @@ export default function Gallery({ onOpen, theme, onToggleTheme }: GalleryProps) 
   };
 
   const handleRenameFolder = async (folderName: string) => {
-    const raw = prompt("Rename folder", folderName);
+    const raw = prompt(t.renameFolderPrompt, folderName);
     if (!raw) return;
     const name = sanitizeName(raw);
     if (!name || name === folderName) return;
@@ -117,13 +129,13 @@ export default function Gallery({ onOpen, theme, onToggleTheme }: GalleryProps) 
   };
 
   const handleDeleteFolder = async (folderName: string) => {
-    if (!confirm(`Delete empty folder "${folderName}"?`)) return;
+    if (!confirm(t.deleteEmptyFolderConfirm(folderName))) return;
     await tauriApi.deleteFolder(joinPath(currentPath, folderName));
     refresh();
   };
 
   const handleNewSketch = () => {
-    const raw = prompt("New sketch name", "untitled");
+    const raw = prompt(t.newSketchPrompt, "untitled");
     if (!raw) return;
     const name = sanitizeName(raw) || "untitled";
     onOpen(joinPath(currentPath, name));
@@ -174,15 +186,66 @@ export default function Gallery({ onOpen, theme, onToggleTheme }: GalleryProps) 
         }`}
       >
         <div className="min-w-0">
-          <h1 className={`text-lg font-bold ${light ? "text-gray-950" : "text-white"}`}>
-            P5JS Studio
-          </h1>
+          <div className="flex items-center gap-2">
+            <div className="relative">
+              <button
+                onClick={() => setShowLanguageMenu((value) => !value)}
+                className={`${subtleButtonClass} px-1.5 py-0.5 rounded transition-colors`}
+              >
+                {t.language}
+              </button>
+              {showLanguageMenu && (
+                <div
+                  className={`absolute left-0 top-6 z-20 min-w-28 rounded border p-1 shadow-lg ${
+                    light ? "bg-white border-gray-200" : "bg-gray-800 border-gray-700"
+                  }`}
+                >
+                  <button
+                    onClick={() => {
+                      onLanguageChange("en");
+                      setShowLanguageMenu(false);
+                    }}
+                    className={`block w-full rounded px-2 py-1 text-left transition-colors ${
+                      language === "en"
+                        ? light
+                          ? "bg-gray-100 text-gray-950"
+                          : "bg-gray-700 text-white"
+                        : subtleButtonClass
+                    }`}
+                  >
+                    {t.english}
+                  </button>
+                  <button
+                    onClick={() => {
+                      onLanguageChange("zh-CN");
+                      setShowLanguageMenu(false);
+                    }}
+                    className={`block w-full rounded px-2 py-1 text-left transition-colors ${
+                      language === "zh-CN"
+                        ? light
+                          ? "bg-gray-100 text-gray-950"
+                          : "bg-gray-700 text-white"
+                        : subtleButtonClass
+                    }`}
+                  >
+                    {t.chinese}
+                  </button>
+                </div>
+              )}
+            </div>
+            <button
+              onClick={() => setShowHelp(true)}
+              className={`${subtleButtonClass} px-1.5 py-0.5 rounded transition-colors`}
+            >
+              {t.help}
+            </button>
+          </div>
           <div className="flex items-center gap-1 mt-1 text-xs">
             <button
               onClick={() => setCurrentPath("")}
               className={`${subtleButtonClass} px-1.5 py-0.5 rounded transition-colors`}
             >
-              Home
+              {t.home}
             </button>
             {breadcrumbParts.map((part, index) => {
               const path = breadcrumbParts.slice(0, index + 1).join("/");
@@ -204,41 +267,46 @@ export default function Gallery({ onOpen, theme, onToggleTheme }: GalleryProps) 
         <div className="flex items-center gap-2">
           <button
             onClick={handleOpenFolder}
-            title="在 Finder 中打开存储目录"
+            title={t.openFolderTitle}
             className={`${subtleButtonClass} px-3 py-2 rounded text-sm transition-colors`}
           >
-            📁 Open Folder
+            📁 {t.openFolder}
           </button>
           <button
             onClick={handleNewFolder}
             className={`${subtleButtonClass} px-3 py-2 rounded text-sm transition-colors`}
           >
-            New Folder
+            {t.newFolder}
           </button>
           <button
             onClick={handleImportZip}
-            title="从 ZIP 导入草图"
+            title={t.importZipTitle}
             className={`${subtleButtonClass} px-3 py-2 rounded text-sm transition-colors`}
           >
-            ↑ Import ZIP
+            ↑ {t.importZip}
           </button>
           <button
             onClick={handleExport}
-            title="将所有草图导出为 ZIP"
+            title={t.exportZipTitle}
             className={`${subtleButtonClass} px-3 py-2 rounded text-sm transition-colors`}
           >
-            ↓ Export ZIP
+            ↓ {t.exportZip}
           </button>
 
           <div className={`w-px h-5 mx-1 ${light ? "bg-gray-200" : "bg-gray-600"}`} />
 
-          <ThemeToggle theme={theme} onToggle={onToggleTheme} />
-          <UploadButton onUploaded={handleUploaded} theme={theme} folderPath={currentPath} />
+          <ThemeToggle theme={theme} onToggle={onToggleTheme} language={language} />
+          <UploadButton
+            onUploaded={handleUploaded}
+            theme={theme}
+            folderPath={currentPath}
+            language={language}
+          />
           <button
             onClick={handleNewSketch}
             className="bg-green-600 hover:bg-green-500 active:bg-green-700 text-white px-4 py-2 rounded text-sm font-medium transition-colors"
           >
-            + New Sketch
+            + {t.newSketch}
           </button>
         </div>
       </div>
@@ -279,7 +347,7 @@ export default function Gallery({ onOpen, theme, onToggleTheme }: GalleryProps) 
                         onClick={() => handleRenameFolder(name)}
                         className={`${subtleButtonClass} text-xs px-2 py-0.5 rounded transition-colors`}
                       >
-                        Rename
+                        {t.renameFolder}
                       </button>
                       <button
                         onClick={() => handleDeleteFolder(name)}
@@ -305,6 +373,7 @@ export default function Gallery({ onOpen, theme, onToggleTheme }: GalleryProps) 
                 onDelete={() => handleDelete(name)}
                 onMove={() => openMoveDialog(name)}
                 theme={theme}
+                language={language}
               />
             ))}
           </div>
@@ -313,11 +382,14 @@ export default function Gallery({ onOpen, theme, onToggleTheme }: GalleryProps) 
         <div className={`flex-1 flex items-center justify-center ${light ? "text-gray-500" : "text-gray-500"}`}>
           <div className="text-center">
             <div className="text-6xl mb-4 opacity-30">{"{ }"}</div>
-            <p className="text-base font-medium">No sketches here</p>
+            <p className="text-base font-medium">{t.noSketchesHere}</p>
             <p className={`text-sm mt-2 ${light ? "text-gray-500" : "text-gray-600"}`}>
-              Create a sketch, create a folder,
-              <br />
-              upload a .js file, or import a ZIP
+              {t.emptyHint.split("\n").map((line, index) => (
+                <span key={line}>
+                  {line}
+                  {index === 0 && <br />}
+                </span>
+              ))}
             </p>
           </div>
         </div>
@@ -327,7 +399,7 @@ export default function Gallery({ onOpen, theme, onToggleTheme }: GalleryProps) 
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
           <div className={`w-96 rounded-lg p-4 shadow-xl ${light ? "bg-white" : "bg-gray-800"}`}>
             <h2 className={`text-sm font-semibold ${light ? "text-gray-950" : "text-white"}`}>
-              Move {movingSketch.split("/").pop()}
+              {t.moveSketch(movingSketch.split("/").pop() ?? "")}
             </h2>
             <select
               value={moveDestination}
@@ -338,7 +410,7 @@ export default function Gallery({ onOpen, theme, onToggleTheme }: GalleryProps) 
             >
               {moveTargets.map((path) => (
                 <option key={path || "root"} value={path}>
-                  {pathLabel(path)}
+                  {pathLabel(path, t.home)}
                 </option>
               ))}
             </select>
@@ -347,14 +419,108 @@ export default function Gallery({ onOpen, theme, onToggleTheme }: GalleryProps) 
                 onClick={() => setMovingSketch(null)}
                 className={`${subtleButtonClass} px-3 py-1.5 rounded text-sm transition-colors`}
               >
-                Cancel
+                {t.cancel}
               </button>
               <button
                 onClick={confirmMove}
                 className="bg-blue-600 hover:bg-blue-500 text-white px-3 py-1.5 rounded text-sm transition-colors"
               >
-                Move
+                {t.move}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showHelp && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 px-4">
+          <div
+            className={`w-full max-w-2xl rounded-lg shadow-xl border ${
+              light ? "bg-white border-gray-200" : "bg-gray-800 border-gray-700"
+            }`}
+          >
+            <div
+              className={`flex items-center justify-between px-5 py-4 border-b ${
+                light ? "border-gray-200" : "border-gray-700"
+              }`}
+            >
+              <h2 className={`text-base font-semibold ${light ? "text-gray-950" : "text-white"}`}>
+                {t.helpTitle}
+              </h2>
+              <button
+                onClick={() => setShowHelp(false)}
+                className={`h-7 w-7 rounded text-sm transition-colors ${
+                  light
+                    ? "text-gray-500 hover:text-gray-950 hover:bg-gray-100"
+                    : "text-gray-400 hover:text-white hover:bg-gray-700"
+                }`}
+                title={t.closeHelp}
+              >
+                x
+              </button>
+            </div>
+
+            <div className={`px-5 py-4 text-sm space-y-4 ${light ? "text-gray-700" : "text-gray-300"}`}>
+              <section>
+                <h3 className={`font-medium mb-1 ${light ? "text-gray-950" : "text-white"}`}>
+                  {t.helpGalleryTitle}
+                </h3>
+                <p>
+                  {t.helpGallery.split("meta.json")[0]}
+                  <code className="font-mono">meta.json</code>
+                  {t.helpGallery.split("meta.json")[1]}
+                </p>
+              </section>
+
+              <section>
+                <h3 className={`font-medium mb-1 ${light ? "text-gray-950" : "text-white"}`}>
+                  {t.helpEditorTitle}
+                </h3>
+                <p>{t.helpEditor}</p>
+              </section>
+
+              <section>
+                <h3 className={`font-medium mb-1 ${light ? "text-gray-950" : "text-white"}`}>
+                  {t.helpAssetsTitle}
+                </h3>
+                <p>
+                  {t.helpAssets.split("images/pic1.png")[0]}
+                  <code className="font-mono">images/pic1.png</code>
+                  {t.helpAssets.split("images/pic1.png")[1]}
+                </p>
+              </section>
+
+              <section>
+                <h3 className={`font-medium mb-1 ${light ? "text-gray-950" : "text-white"}`}>
+                  {t.helpDebugTitle}
+                </h3>
+                <p>
+                  {t.helpDebug.split("console.log")[0]}
+                  <code className="font-mono">console.log</code>
+                  {t.helpDebug.split("console.log")[1]}
+                </p>
+              </section>
+
+              <section>
+                <h3 className={`font-medium mb-1 ${light ? "text-gray-950" : "text-white"}`}>
+                  {t.helpPreviewTitle}
+                </h3>
+                <p>
+                  {t.helpPreview}
+                </p>
+              </section>
+
+              <section>
+                <h3 className={`font-medium mb-1 ${light ? "text-gray-950" : "text-white"}`}>
+                  {t.helpShortcutsTitle}
+                </h3>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1">
+                  <p><code className="font-mono">Ctrl+Enter</code> {t.shortcutRun}</p>
+                  <p><code className="font-mono">Ctrl+S</code> {t.shortcutSave}</p>
+                  <p><code className="font-mono">Ctrl+wheel</code> {t.shortcutFont}</p>
+                  <p><code className="font-mono">Shift+Alt+F</code> {t.shortcutFormat}</p>
+                </div>
+              </section>
             </div>
           </div>
         </div>

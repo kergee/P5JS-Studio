@@ -5,7 +5,7 @@ import type {
 } from "@codemirror/autocomplete";
 import { javascriptLanguage } from "@codemirror/lang-javascript";
 
-const p5Completions: Completion[] = [
+export const p5Completions: Completion[] = [
   {
     label: "setup",
     type: "function",
@@ -90,6 +90,8 @@ const p5Completions: Completion[] = [
   { label: "CENTER", type: "constant" },
   { label: "CORNER", type: "constant" },
 ];
+
+export const p5CompletionLabels = p5Completions.map((completion) => completion.label);
 
 function p5CompletionSource(context: CompletionContext): CompletionResult | null {
   const word = context.matchBefore(/[A-Za-z_$][\w$]*/);
