@@ -112,7 +112,30 @@ export default function Editor({ initialName, onBack, theme, onToggleTheme, lang
 
   const combinedCode = files.map((f) => f.code).join("\n");
 
+  const save = useCallback(async () => {
+    // Ensure sketch folder exists
+    if (!sketches.includes(name)) {
+      await tauriApi.createSketch(name);
+      addSketch(name);
+    }
+    // Save each file
+    for (const f of files) {
+      await tauriApi.saveSketchFile(name, f.name, f.code);
+    }
+    // Save notes
+    await tauriApi.saveNotes(name, notes);
+    // Save pending thumbnail if any
+    if (pendingThumbnail.current) {
+      await tauriApi.saveThumbnail(name, pendingThumbnail.current);
+      pendingThumbnail.current = null;
+    }
+    setSavedMsg(true);
+    setTimeout(() => setSavedMsg(false), 2000);
+  }, [name, files, notes, sketches, addSketch]);
+
   const run = useCallback(async () => {
+    await save();
+
     const diagnostics = getJavaScriptDiagnostics(combinedCode);
     const staticMessages: DebugMessage[] = diagnostics.map((diagnostic) => ({
       level: diagnostic.level === "error" ? "error" : "warn",
@@ -141,36 +164,17 @@ export default function Editor({ initialName, onBack, theme, onToggleTheme, lang
       setAssets({});
     }
     setRunTrigger((t) => t + 1);
-  }, [combinedCode, name]);
-
-  const save = useCallback(async () => {
-    // Ensure sketch folder exists
-    if (!sketches.includes(name)) {
-      await tauriApi.createSketch(name);
-      addSketch(name);
-    }
-    // Save each file
-    for (const f of files) {
-      await tauriApi.saveSketchFile(name, f.name, f.code);
-    }
-    // Save notes
-    await tauriApi.saveNotes(name, notes);
-    // Save pending thumbnail if any
-    if (pendingThumbnail.current) {
-      await tauriApi.saveThumbnail(name, pendingThumbnail.current);
-      pendingThumbnail.current = null;
-    }
-    setSavedMsg(true);
-    setTimeout(() => setSavedMsg(false), 2000);
-  }, [name, files, notes, sketches, addSketch]);
+  }, [combinedCode, name, save]);
 
   const handleThumbnail = useCallback((dataUrl: string) => {
     pendingThumbnail.current = dataUrl;
-    // Auto-save thumbnail immediately if sketch already exists
-    if (initialName) {
-      tauriApi.saveThumbnail(initialName, dataUrl).catch(() => {});
-    }
-  }, [initialName]);
+    tauriApi
+      .saveThumbnail(name, dataUrl)
+      .then(() => {
+        pendingThumbnail.current = null;
+      })
+      .catch(() => {});
+  }, [name]);
 
   const handleAddFile = useCallback(async (fileName: string) => {
     if (files.find((f) => f.name === fileName)) return;
