@@ -21,6 +21,13 @@ function clampEditorFontSize(size: number) {
   return Math.min(MAX_EDITOR_FONT_SIZE, Math.max(MIN_EDITOR_FONT_SIZE, size));
 }
 
+function sanitizeSketchPath(value: string) {
+  return value
+    .replace(/[\\:*?"<>|]/g, "")
+    .replace(/\/+/g, "/")
+    .replace(/^\/+/, "");
+}
+
 interface EditorProps {
   initialName?: string;
   onBack: () => void;
@@ -181,7 +188,7 @@ export default function Editor({ initialName, onBack, theme, onToggleTheme }: Ed
             <input
               autoFocus
               value={name}
-              onChange={(e) => setName(e.target.value.replace(/[^a-zA-Z0-9_-]/g, ""))}
+              onChange={(e) => setName(sanitizeSketchPath(e.target.value))}
               onBlur={() => setEditingName(false)}
               onKeyDown={(e) => e.key === "Enter" && setEditingName(false)}
               className={`px-2 py-1 rounded text-sm w-48 outline-none border border-blue-500 ${
