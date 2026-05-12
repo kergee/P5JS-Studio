@@ -6,8 +6,12 @@ import { keymap } from "@codemirror/view";
 import Preview from "./Preview";
 import FileTabs from "./FileTabs";
 import ThemeToggle from "./ThemeToggle";
+import { DebugMessage } from "../lib/debug";
 import { formatJavaScript } from "../lib/formatCode";
+import { Language, text } from "../lib/language";
 import { p5CompletionExtension } from "../lib/p5Completions";
+import { getJavaScriptDiagnostics, p5LintExtension } from "../lib/p5Diagnostics";
+import { checkJavaScriptSyntax } from "../lib/syntaxCheck";
 import { tauriApi, SketchAssets, SketchFile } from "../lib/tauri";
 import { ColorTheme, isLightTheme } from "../lib/theme";
 import { useSketchStore } from "../store/useSketchStore";
@@ -33,9 +37,10 @@ interface EditorProps {
   onBack: () => void;
   theme: ColorTheme;
   onToggleTheme: () => void;
+  language: Language;
 }
 
-export default function Editor({ initialName, onBack, theme, onToggleTheme }: EditorProps) {
+export default function Editor({ initialName, onBack, theme, onToggleTheme, language }: EditorProps) {
   const [files, setFiles] = useState<SketchFile[]>([{ name: "sketch.js", code: "" }]);
   const [activeFile, setActiveFile] = useState("sketch.js");
   const [name, setName] = useState(initialName ?? "untitled");
@@ -46,6 +51,7 @@ export default function Editor({ initialName, onBack, theme, onToggleTheme }: Ed
   const [runTrigger, setRunTrigger] = useState(0);
   const [savedMsg, setSavedMsg] = useState(false);
   const [formatMsg, setFormatMsg] = useState<string | null>(null);
+  const [debugMessages, setDebugMessages] = useState<DebugMessage[]>([]);
   const [fontSize, setFontSize] = useState(() => {
     const stored = Number(localStorage.getItem(EDITOR_FONT_SIZE_KEY));
     return Number.isFinite(stored)
@@ -55,6 +61,7 @@ export default function Editor({ initialName, onBack, theme, onToggleTheme }: Ed
   const { addSketch, sketches } = useSketchStore();
   const pendingThumbnail = useRef<string | null>(null);
   const light = isLightTheme(theme);
+  const t = text[language];
   const subtleButtonClass = light
     ? "text-gray-600 hover:text-gray-950 hover:bg-gray-100"
     : "text-gray-400 hover:text-white hover:bg-gray-700";
@@ -91,22 +98,50 @@ export default function Editor({ initialName, onBack, theme, onToggleTheme }: Ed
     try {
       const formatted = await formatJavaScript(activeCode);
       updateCode(formatted);
-      setFormatMsg("Formatted");
+      setFormatMsg(t.formatted);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Could not format";
       setFormatMsg(message.split("\n")[0]);
     }
     setTimeout(() => setFormatMsg(null), 2500);
-  }, [activeCode, updateCode]);
+  }, [activeCode, t.formatted, updateCode]);
+
+  const appendDebugMessage = useCallback((message: DebugMessage) => {
+    setDebugMessages((messages) => [...messages, message].slice(-100));
+  }, []);
+
+  const combinedCode = files.map((f) => f.code).join("\n");
 
   const run = useCallback(async () => {
+    const diagnostics = getJavaScriptDiagnostics(combinedCode);
+    const staticMessages: DebugMessage[] = diagnostics.map((diagnostic) => ({
+      level: diagnostic.level === "error" ? "error" : "warn",
+      message: diagnostic.message,
+      line: diagnostic.line,
+      column: diagnostic.column,
+      timestamp: Date.now(),
+    }));
+    setDebugMessages(staticMessages);
+
+    const syntaxError = await checkJavaScriptSyntax(combinedCode);
+    if (syntaxError) {
+      setDebugMessages([{
+        level: "error",
+        message: `SyntaxError: ${syntaxError.message}`,
+        line: syntaxError.line,
+        column: syntaxError.column,
+        timestamp: Date.now(),
+      }]);
+      return;
+    }
+
     try {
       setAssets(await tauriApi.getSketchAssets(name));
     } catch {
       setAssets({});
     }
     setRunTrigger((t) => t + 1);
-  }, [name]);
+  }, [combinedCode, name]);
 
   const save = useCallback(async () => {
     // Ensure sketch folder exists
@@ -157,8 +192,6 @@ export default function Editor({ initialName, onBack, theme, onToggleTheme }: Ed
     });
   }, [activeFile, initialName]);
 
-  const combinedCode = files.map((f) => f.code).join("\n");
-
   const keymapExt = keymap.of([
     { key: "Ctrl-Enter", mac: "Ctrl-Enter", run: () => { run(); return true; } },
     { key: "Ctrl-s", mac: "Cmd-s", run: () => { save(); return true; } },
@@ -180,7 +213,7 @@ export default function Editor({ initialName, onBack, theme, onToggleTheme }: Ed
           onClick={onBack}
           className={`${subtleButtonClass} text-sm px-2 py-1 rounded transition-colors`}
         >
-          ← Gallery
+          ← {t.backToGallery}
         </button>
         <div className={`w-px h-4 ${light ? "bg-gray-200" : "bg-gray-600"}`} />
         <div className="flex items-center gap-2 flex-1">
@@ -199,12 +232,12 @@ export default function Editor({ initialName, onBack, theme, onToggleTheme }: Ed
             <button
               className={`text-sm px-1 ${light ? "text-gray-700 hover:text-black" : "text-gray-300 hover:text-white"}`}
               onClick={() => setEditingName(true)}
-              title="Click to rename"
+              title={t.clickToRename}
             >
               {name}
             </button>
           )}
-          {savedMsg && <span className="text-green-400 text-xs">Saved</span>}
+          {savedMsg && <span className="text-green-400 text-xs">{t.saved}</span>}
         </div>
         <button
           onClick={() => setShowNotes((v) => !v)}
@@ -216,13 +249,13 @@ export default function Editor({ initialName, onBack, theme, onToggleTheme }: Ed
               : subtleButtonClass
           }`}
         >
-          {notes ? "📝 Notes" : "Notes"}
+          {notes ? `📝 ${t.notes}` : t.notes}
         </button>
-        <ThemeToggle theme={theme} onToggle={onToggleTheme} />
+        <ThemeToggle theme={theme} onToggle={onToggleTheme} language={language} />
         <button
           onClick={() => adjustFontSize(-1)}
           className={`${subtleButtonClass} px-2 py-1.5 rounded text-sm transition-colors`}
-          title="Decrease editor font size"
+          title={t.decreaseFont}
         >
           A-
         </button>
@@ -232,30 +265,29 @@ export default function Editor({ initialName, onBack, theme, onToggleTheme }: Ed
         <button
           onClick={() => adjustFontSize(1)}
           className={`${subtleButtonClass} px-2 py-1.5 rounded text-sm transition-colors`}
-          title="Increase editor font size"
+          title={t.increaseFont}
         >
           A+
         </button>
         <button
           onClick={formatActiveFile}
           className={`${subtleButtonClass} px-3 py-1.5 rounded text-sm transition-colors`}
-          title="Format current file"
+          title={t.formatTitle}
         >
-          Format
+          {t.format}
         </button>
         {formatMsg && <span className="text-gray-500 text-xs max-w-48 truncate">{formatMsg}</span>}
-        <span className="text-gray-600 text-xs hidden lg:block">Ctrl+Enter · Ctrl+S · Ctrl+wheel</span>
         <button
           onClick={run}
           className="bg-green-600 hover:bg-green-500 text-white px-4 py-1.5 rounded text-sm font-medium transition-colors"
         >
-          ▶ Run
+          ▶ {t.run}
         </button>
         <button
           onClick={save}
           className="bg-blue-600 hover:bg-blue-500 text-white px-4 py-1.5 rounded text-sm font-medium transition-colors"
         >
-          Save
+          {t.save}
         </button>
       </div>
 
@@ -267,6 +299,7 @@ export default function Editor({ initialName, onBack, theme, onToggleTheme }: Ed
         onAdd={handleAddFile}
         onRemove={handleRemoveFile}
         theme={theme}
+        language={language}
       />
 
       {/* Notes panel (collapsible) */}
@@ -279,7 +312,7 @@ export default function Editor({ initialName, onBack, theme, onToggleTheme }: Ed
           <textarea
             value={notes}
             onChange={(e) => setNotes(e.target.value)}
-            placeholder="Add notes, description, or links for this sketch…"
+            placeholder={t.addNotesPlaceholder}
             rows={3}
             className={`w-full text-sm px-3 py-2 rounded resize-none outline-none placeholder-gray-500 border focus:border-blue-500 ${
               light
@@ -305,7 +338,7 @@ export default function Editor({ initialName, onBack, theme, onToggleTheme }: Ed
             value={activeCode}
             height="100%"
             theme={light ? "light" : oneDark}
-            extensions={[javascript(), p5CompletionExtension, keymapExt]}
+            extensions={[javascript(), p5LintExtension, p5CompletionExtension, keymapExt]}
             onChange={updateCode}
             style={{ height: "100%", fontSize: `${fontSize}px` }}
             basicSetup={{ lineNumbers: true, foldGutter: true, autocompletion: true }}
@@ -317,7 +350,11 @@ export default function Editor({ initialName, onBack, theme, onToggleTheme }: Ed
             assets={assets}
             runTrigger={runTrigger}
             onThumbnail={handleThumbnail}
+            debugMessages={debugMessages}
+            onDebugMessage={appendDebugMessage}
+            onClearDebug={() => setDebugMessages([])}
             theme={theme}
+            language={language}
           />
         </div>
       </div>

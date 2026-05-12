@@ -1,6 +1,6 @@
 {
   "name": "p5js-studio",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "engines": {
     "node": ">=22"
   },
@@ -12,8 +12,10 @@
     "tauri": "tauri"
   },
   "dependencies": {
+    "@babel/parser": "^7.29.3",
     "@codemirror/autocomplete": "^6.20.2",
     "@codemirror/lang-javascript": "^6.2.2",
+    "@codemirror/lint": "^6.9.6",
     "@codemirror/theme-one-dark": "^6.1.2",
     "@tauri-apps/api": "^2",
     "@tauri-apps/plugin-dialog": "^2",

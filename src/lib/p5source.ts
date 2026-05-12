@@ -10,10 +10,77 @@ export function buildSrcdoc(userCode: string, assets: SketchAssets = {}): string
 <head>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { overflow: hidden; background: #1a1a1a; }
+    html, body { min-width: 100%; min-height: 100%; }
+    body { overflow: auto; background: #1a1a1a; }
     canvas { display: block; }
   </style>
+  <script>
+    (function() {
+      function stringifyDebugValue(value) {
+        if (value instanceof Error) {
+          return value.stack || value.message;
+        }
+        if (typeof value === 'string') {
+          return value;
+        }
+        try {
+          return JSON.stringify(value);
+        } catch(e) {
+          return String(value);
+        }
+      }
+
+      window.__p5studioDebug = function(level, args, line, column) {
+        try {
+          window.parent.postMessage(
+            {
+              type: 'p5studio_debug',
+              level: level,
+              message: Array.prototype.slice.call(args).map(stringifyDebugValue).join(' '),
+              line: line,
+              column: column
+            },
+            '*'
+          );
+        } catch(e) {}
+      };
+
+      ['log', 'warn', 'error'].forEach(function(level) {
+        var original = console[level];
+        console[level] = function() {
+          window.__p5studioDebug(level, arguments);
+          if (typeof original === 'function') {
+            original.apply(console, arguments);
+          }
+        };
+      });
+    })();
+    window.onerror = function(msg, _src, line, column, error) {
+      window.__p5studioDebug('error', [error || msg], line, column);
+      document.body.style.background = '#1a1a1a';
+      document.body.innerHTML =
+        '<pre style="color:#ff6b6b;padding:16px;font-size:13px;font-family:monospace;white-space:pre-wrap;">'
+        + msg + '\\n(line ' + line + (column ? ', column ' + column : '') + ')'
+        + '</pre>';
+      return true;
+    };
+    window.addEventListener('unhandledrejection', function(event) {
+      var reason = event.reason || 'Unhandled promise rejection';
+      window.__p5studioDebug('error', [reason]);
+    });
+    window.addEventListener('message', function(event) {
+      if (!event.data || event.data.type !== 'p5studio_preview_scale') return;
+      var scale = Number(event.data.scale);
+      if (!Number.isFinite(scale) || scale <= 0) return;
+      document.documentElement.style.setProperty('zoom', String(scale));
+    });
+  </script>
   <script>${p5Source}</script>
+  <script>
+    if (window.p5) {
+      window.p5.disableFriendlyErrors = true;
+    }
+  </script>
 </head>
 <body>
   <script>
@@ -47,15 +114,42 @@ export function buildSrcdoc(userCode: string, assets: SketchAssets = {}): string
       }
     })();
 
-    window.onerror = function(msg, _src, line) {
-      document.body.style.background = '#1a1a1a';
-      document.body.innerHTML =
-        '<pre style="color:#ff6b6b;padding:16px;font-size:13px;font-family:monospace;white-space:pre-wrap;">'
-        + msg + '\\n(line ' + line + ')'
-        + '</pre>';
-      return true;
-    };
+  </script>
+  <script>
     ${userCode}
+  </script>
+  <script>
+    (function() {
+      function wrapSketchFunction(name) {
+        var original = window[name];
+        if (typeof original !== 'function') return;
+        window[name] = function() {
+          try {
+            return original.apply(this, arguments);
+          } catch (error) {
+            window.__p5studioDebug('error', [error]);
+            throw error;
+          }
+        };
+      }
+
+      [
+        'preload',
+        'setup',
+        'draw',
+        'windowResized',
+        'mousePressed',
+        'mouseReleased',
+        'mouseClicked',
+        'mouseDragged',
+        'keyPressed',
+        'keyReleased',
+        'keyTyped',
+        'touchStarted',
+        'touchMoved',
+        'touchEnded'
+      ].forEach(wrapSketchFunction);
+    })();
     // Auto-capture canvas thumbnail after 1.5s and send to parent
     setTimeout(function() {
       try {

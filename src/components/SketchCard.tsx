@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Language, text } from "../lib/language";
 import { ColorTheme, isLightTheme } from "../lib/theme";
 import { tauriApi } from "../lib/tauri";
 
@@ -8,12 +9,14 @@ interface SketchCardProps {
   onDelete: () => void;
   onMove: () => void;
   theme: ColorTheme;
+  language: Language;
 }
 
-export default function SketchCard({ name, onOpen, onDelete, onMove, theme }: SketchCardProps) {
+export default function SketchCard({ name, onOpen, onDelete, onMove, theme, language }: SketchCardProps) {
   const [thumbnail, setThumbnail] = useState<string | null>(null);
   const [notes, setNotes] = useState("");
   const light = isLightTheme(theme);
+  const t = text[language];
 
   useEffect(() => {
     tauriApi.getSketchSummary(name).then((s) => setNotes(s.notes));
@@ -75,7 +78,7 @@ export default function SketchCard({ name, onOpen, onDelete, onMove, theme }: Sk
                   : "text-gray-400 hover:text-white hover:bg-gray-700"
               }`}
             >
-              Edit
+              {t.edit}
             </button>
             <button
               onClick={(e) => {
@@ -88,12 +91,12 @@ export default function SketchCard({ name, onOpen, onDelete, onMove, theme }: Sk
                   : "text-gray-400 hover:text-white hover:bg-gray-700"
               }`}
             >
-              Move
+              {t.move}
             </button>
             <button
               onClick={(e) => {
                 e.stopPropagation();
-                if (confirm(`Delete "${name}"?`)) onDelete();
+                if (confirm(t.deleteSketchConfirm(name))) onDelete();
               }}
               className={`text-xs px-2 py-0.5 rounded transition-colors ${
                 light

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Language, text } from "../lib/language";
 import { ColorTheme, isLightTheme } from "../lib/theme";
 
 interface FileTabsProps {
@@ -8,6 +9,7 @@ interface FileTabsProps {
   onAdd: (name: string) => void;
   onRemove: (name: string) => void;
   theme: ColorTheme;
+  language: Language;
 }
 
 export default function FileTabs({
@@ -17,10 +19,12 @@ export default function FileTabs({
   onAdd,
   onRemove,
   theme,
+  language,
 }: FileTabsProps) {
   const [adding, setAdding] = useState(false);
   const [newName, setNewName] = useState("");
   const light = isLightTheme(theme);
+  const t = text[language];
 
   const confirmAdd = () => {
     const name = newName.trim();
@@ -61,9 +65,9 @@ export default function FileTabs({
               }`}
               onClick={(e) => {
                 e.stopPropagation();
-                if (confirm(`Remove "${f}" from this sketch?`)) onRemove(f);
+                if (confirm(t.removeFileConfirm(f))) onRemove(f);
               }}
-              title="Remove file"
+              title={t.removeFileTitle}
             >
               ×
             </button>
@@ -96,9 +100,9 @@ export default function FileTabs({
               ? "text-gray-500 hover:text-gray-900 hover:bg-white"
               : "text-gray-500 hover:text-gray-300 hover:bg-gray-700"
           }`}
-          title="Add file"
+          title={t.addFileTitle}
         >
-          + Add File
+          + {t.addFile}
         </button>
       )}
     </div>
