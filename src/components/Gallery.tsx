@@ -4,6 +4,7 @@ import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { Language, text } from "../lib/language";
 import { DirectoryListing, tauriApi } from "../lib/tauri";
 import { ColorTheme, isLightTheme } from "../lib/theme";
+import { APP_VERSION } from "../lib/version";
 import { useSketchStore } from "../store/useSketchStore";
 import SketchCard from "./SketchCard";
 import ThemeToggle from "./ThemeToggle";
@@ -96,6 +97,7 @@ export default function Gallery({
   }, [addSketch, currentPath, refresh]);
 
   const handleDelete = async (name: string) => {
+    if (!confirm(t.deleteSketchConfirm(name))) return;
     const sketchPath = joinPath(currentPath, name);
     await tauriApi.deleteSketch(sketchPath);
     removeSketch(sketchPath);
@@ -242,6 +244,9 @@ export default function Gallery({
             >
               {t.help}
             </button>
+            <span className={`px-1.5 py-0.5 ${light ? "text-gray-400" : "text-gray-500"}`}>
+              v{APP_VERSION}
+            </span>
           </div>
           <div className="flex items-center gap-1 mt-1 text-xs">
             <button
