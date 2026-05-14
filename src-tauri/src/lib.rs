@@ -133,19 +133,50 @@ fn thumbnail_data_url(dir: &PathBuf) -> Option<String> {
     Some(format!("data:image/png;base64,{}", STANDARD.encode(&bytes)))
 }
 
-fn image_mime_type(path: &PathBuf) -> Option<&'static str> {
-    match path.extension()?.to_string_lossy().to_lowercase().as_str() {
-        "png" => Some("image/png"),
-        "jpg" | "jpeg" => Some("image/jpeg"),
-        "gif" => Some("image/gif"),
-        "webp" => Some("image/webp"),
-        "bmp" => Some("image/bmp"),
-        "svg" => Some("image/svg+xml"),
-        _ => None,
+fn asset_mime_type(path: &PathBuf) -> &'static str {
+    let extension = path
+        .extension()
+        .map(|ext| ext.to_string_lossy().to_lowercase())
+        .unwrap_or_default();
+    match extension.as_str() {
+        "png" => "image/png",
+        "jpg" | "jpeg" => "image/jpeg",
+        "gif" => "image/gif",
+        "webp" => "image/webp",
+        "bmp" => "image/bmp",
+        "svg" => "image/svg+xml",
+        "ttf" => "font/ttf",
+        "otf" => "font/otf",
+        "woff" => "font/woff",
+        "woff2" => "font/woff2",
+        "json" => "application/json",
+        "txt" => "text/plain",
+        "csv" => "text/csv",
+        "tsv" => "text/tab-separated-values",
+        "xml" => "application/xml",
+        "obj" => "text/plain",
+        "stl" => "model/stl",
+        "vert" | "frag" | "glsl" => "text/plain",
+        "mp3" => "audio/mpeg",
+        "wav" => "audio/wav",
+        "ogg" => "audio/ogg",
+        "m4a" => "audio/mp4",
+        "mp4" => "video/mp4",
+        "webm" => "video/webm",
+        "mov" => "video/quicktime",
+        "bin" => "application/octet-stream",
+        _ => "application/octet-stream",
     }
 }
 
-fn collect_image_assets(dir: &PathBuf, prefix: &str, assets: &mut HashMap<String, String>) {
+fn should_skip_asset(path: &PathBuf) -> bool {
+    let Some(file_name) = path.file_name().map(|name| name.to_string_lossy().to_lowercase()) else {
+        return true;
+    };
+    file_name == "meta.json" || file_name == "thumbnail.png"
+}
+
+fn collect_sketch_assets(dir: &PathBuf, prefix: &str, assets: &mut HashMap<String, String>) {
     let entries = match fs::read_dir(dir) {
         Ok(entries) => entries,
         Err(_) => return,
@@ -161,13 +192,14 @@ fn collect_image_assets(dir: &PathBuf, prefix: &str, assets: &mut HashMap<String
         };
 
         if path.is_dir() {
-            collect_image_assets(&path, &rel_path, assets);
+            collect_sketch_assets(&path, &rel_path, assets);
             continue;
         }
 
-        let Some(mime) = image_mime_type(&path) else {
+        if should_skip_asset(&path) {
             continue;
-        };
+        }
+        let mime = asset_mime_type(&path);
         let Ok(bytes) = fs::read(&path) else {
             continue;
         };
@@ -372,10 +404,10 @@ fn get_sketch_assets(app: AppHandle, name: String) -> HashMap<String, String> {
     let mut assets = HashMap::new();
 
     // Global resources can live in sketches/public.
-    collect_image_assets(&base.join("public"), "", &mut assets);
+    collect_sketch_assets(&base.join("public"), "", &mut assets);
     // Sketch-local resources live beside sketch.js and override global names.
     if let Ok(dir) = sketch_dir(&app, &name) {
-        collect_image_assets(&dir, "", &mut assets);
+        collect_sketch_assets(&dir, "", &mut assets);
     }
 
     assets

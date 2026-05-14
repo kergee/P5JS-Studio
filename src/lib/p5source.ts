@@ -97,21 +97,101 @@ export function buildSrcdoc(userCode: string, assets: SketchAssets = {}): string
           || null;
       }
 
-      function wrapLoadImage(originalLoadImage) {
+      function mapAssetPath(value) {
+        if (Array.isArray(value)) {
+          return value.map(function(item) {
+            return resolveAssetPath(item) || item;
+          });
+        }
+        return resolveAssetPath(value) || value;
+      }
+
+      function extensionFromPath(path) {
+        if (typeof path !== 'string') return '';
+        var cleaned = path.split('#')[0].split('?')[0];
+        var match = cleaned.match(/\\.([a-z0-9]+)$/i);
+        return match ? match[1].toLowerCase() : '';
+      }
+
+      function wrapAssetLoader(originalLoader) {
         return function(path) {
           var args = Array.prototype.slice.call(arguments);
-          var mapped = resolveAssetPath(path);
-          if (mapped) args[0] = mapped;
-          return originalLoadImage.apply(this, args);
+          args[0] = mapAssetPath(path);
+          return originalLoader.apply(this, args);
         };
       }
 
-      if (window.p5 && window.p5.prototype && typeof window.p5.prototype.loadImage === 'function') {
-        window.p5.prototype.loadImage = wrapLoadImage(window.p5.prototype.loadImage);
+      function wrapTableLoader(originalLoader) {
+        return function(path) {
+          var args = Array.prototype.slice.call(arguments);
+          var extension = extensionFromPath(path);
+          args[0] = mapAssetPath(path);
+          if ((extension === 'csv' || extension === 'tsv') && args[1] !== 'csv' && args[1] !== 'tsv') {
+            args.splice(1, 0, extension);
+          }
+          return originalLoader.apply(this, args);
+        };
       }
-      if (typeof window.loadImage === 'function') {
-        window.loadImage = wrapLoadImage(window.loadImage);
+
+      function wrapModelLoader(originalLoader) {
+        return function(path) {
+          var args = Array.prototype.slice.call(arguments);
+          var extension = extensionFromPath(path);
+          args[0] = mapAssetPath(path);
+          if ((extension === 'obj' || extension === 'stl') && !args.some(function(arg) { return arg === 'obj' || arg === 'stl'; })) {
+            args[4] = extension;
+          }
+          return originalLoader.apply(this, args);
+        };
       }
+
+      function wrapShaderLoader(originalLoader) {
+        return function(vertexPath, fragmentPath) {
+          var args = Array.prototype.slice.call(arguments);
+          args[0] = mapAssetPath(vertexPath);
+          args[1] = mapAssetPath(fragmentPath);
+          return originalLoader.apply(this, args);
+        };
+      }
+
+      function wrapNamedLoader(target, name, wrapper) {
+        if (target && typeof target[name] === 'function') {
+          target[name] = wrapper(target[name]);
+        }
+      }
+
+      var singlePathLoaders = [
+        'loadImage',
+        'loadFont',
+        'loadJSON',
+        'loadStrings',
+        'loadXML',
+        'loadBytes',
+        'loadSound',
+        'createImg',
+        'createVideo',
+        'createAudio'
+      ];
+
+      singlePathLoaders.forEach(function(name) {
+        wrapNamedLoader(window.p5 && window.p5.prototype, name, wrapAssetLoader);
+        wrapNamedLoader(window, name, wrapAssetLoader);
+      });
+
+      ['loadTable'].forEach(function(name) {
+        wrapNamedLoader(window.p5 && window.p5.prototype, name, wrapTableLoader);
+        wrapNamedLoader(window, name, wrapTableLoader);
+      });
+
+      ['loadModel'].forEach(function(name) {
+        wrapNamedLoader(window.p5 && window.p5.prototype, name, wrapModelLoader);
+        wrapNamedLoader(window, name, wrapModelLoader);
+      });
+
+      ['loadShader'].forEach(function(name) {
+        wrapNamedLoader(window.p5 && window.p5.prototype, name, wrapShaderLoader);
+        wrapNamedLoader(window, name, wrapShaderLoader);
+      });
     })();
 
   </script>
