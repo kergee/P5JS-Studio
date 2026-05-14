@@ -96,7 +96,7 @@ export default function SketchCard({ name, onOpen, onDelete, onMove, theme, lang
             <button
               onClick={(e) => {
                 e.stopPropagation();
-                if (confirm(t.deleteSketchConfirm(name))) onDelete();
+                onDelete();
               }}
               className={`text-xs px-2 py-0.5 rounded transition-colors ${
                 light

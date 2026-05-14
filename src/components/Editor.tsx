@@ -25,11 +25,25 @@ function clampEditorFontSize(size: number) {
   return Math.min(MAX_EDITOR_FONT_SIZE, Math.max(MIN_EDITOR_FONT_SIZE, size));
 }
 
-function sanitizeSketchPath(value: string) {
+function joinPath(parent: string, child: string) {
+  return parent ? `${parent}/${child}` : child;
+}
+
+function parentPath(path: string) {
+  const parts = path.split("/").filter(Boolean);
+  parts.pop();
+  return parts.join("/");
+}
+
+function basename(path: string) {
+  return path.split("/").filter(Boolean).pop() ?? path;
+}
+
+function sanitizeSketchName(value: string) {
   return value
     .replace(/[\\:*?"<>|]/g, "")
-    .replace(/\/+/g, "/")
-    .replace(/^\/+/, "");
+    .replace(/\//g, "")
+    .trim();
 }
 
 interface EditorProps {
@@ -45,6 +59,7 @@ export default function Editor({ initialName, onBack, theme, onToggleTheme, lang
   const [activeFile, setActiveFile] = useState("sketch.js");
   const [name, setName] = useState(initialName ?? "untitled");
   const [editingName, setEditingName] = useState(false);
+  const [renameDraft, setRenameDraft] = useState("");
   const [notes, setNotes] = useState("");
   const [showNotes, setShowNotes] = useState(false);
   const [assets, setAssets] = useState<SketchAssets>({});
@@ -79,6 +94,20 @@ export default function Editor({ initialName, onBack, theme, onToggleTheme, lang
   }, [initialName]);
 
   const activeCode = files.find((f) => f.name === activeFile)?.code ?? "";
+  const displayName = basename(name);
+
+  const startRename = () => {
+    setRenameDraft(displayName);
+    setEditingName(true);
+  };
+
+  const commitRename = () => {
+    const nextName = sanitizeSketchName(renameDraft);
+    if (nextName) {
+      setName(joinPath(parentPath(name), nextName));
+    }
+    setEditingName(false);
+  };
 
   useEffect(() => {
     localStorage.setItem(EDITOR_FONT_SIZE_KEY, String(fontSize));
@@ -224,10 +253,13 @@ export default function Editor({ initialName, onBack, theme, onToggleTheme, lang
           {editingName ? (
             <input
               autoFocus
-              value={name}
-              onChange={(e) => setName(sanitizeSketchPath(e.target.value))}
-              onBlur={() => setEditingName(false)}
-              onKeyDown={(e) => e.key === "Enter" && setEditingName(false)}
+              value={renameDraft}
+              onChange={(e) => setRenameDraft(sanitizeSketchName(e.target.value))}
+              onBlur={commitRename}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") commitRename();
+                if (e.key === "Escape") setEditingName(false);
+              }}
               className={`px-2 py-1 rounded text-sm w-48 outline-none border border-blue-500 ${
                 light ? "bg-white text-gray-950" : "bg-gray-700 text-white"
               }`}
@@ -235,10 +267,10 @@ export default function Editor({ initialName, onBack, theme, onToggleTheme, lang
           ) : (
             <button
               className={`text-sm px-1 ${light ? "text-gray-700 hover:text-black" : "text-gray-300 hover:text-white"}`}
-              onClick={() => setEditingName(true)}
+              onClick={startRename}
               title={t.clickToRename}
             >
-              {name}
+              {displayName}
             </button>
           )}
           {savedMsg && <span className="text-green-400 text-xs">{t.saved}</span>}
