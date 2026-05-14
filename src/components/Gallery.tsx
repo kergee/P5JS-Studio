@@ -22,6 +22,11 @@ interface GalleryProps {
 
 const emptyListing: DirectoryListing = { folders: [], sketches: [] };
 
+type PendingDelete =
+  | { type: "sketch"; name: string }
+  | { type: "folder"; name: string }
+  | null;
+
 function joinPath(parent: string, name: string) {
   return parent ? `${parent}/${name}` : name;
 }
@@ -56,6 +61,8 @@ export default function Gallery({
   const [moveTargets, setMoveTargets] = useState<string[]>([]);
   const [movingSketch, setMovingSketch] = useState<string | null>(null);
   const [moveDestination, setMoveDestination] = useState("");
+  const [pendingDelete, setPendingDelete] = useState<PendingDelete>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const light = isLightTheme(theme);
   const t = text[language];
   const subtleButtonClass = light
@@ -97,7 +104,6 @@ export default function Gallery({
   }, [addSketch, currentPath, refresh]);
 
   const handleDelete = async (name: string) => {
-    if (!confirm(t.deleteSketchConfirm(name))) return;
     const sketchPath = joinPath(currentPath, name);
     await tauriApi.deleteSketch(sketchPath);
     removeSketch(sketchPath);
@@ -133,10 +139,25 @@ export default function Gallery({
     refresh();
   };
 
-  const handleDeleteFolder = async (folderName: string) => {
-    if (!confirm(t.deleteEmptyFolderConfirm(folderName))) return;
-    await tauriApi.deleteFolder(joinPath(currentPath, folderName));
+  const handleDeleteFolder = async (name: string) => {
+    await tauriApi.deleteFolder(joinPath(currentPath, name));
     refresh();
+  };
+
+  const confirmDelete = async () => {
+    if (!pendingDelete) return;
+    try {
+      if (pendingDelete.type === "sketch") {
+        await handleDelete(pendingDelete.name);
+      } else {
+        await handleDeleteFolder(pendingDelete.name);
+      }
+      setPendingDelete(null);
+    } catch {
+      setDeleteError(
+        pendingDelete.type === "sketch" ? t.deleteSketchFailed : t.deleteFolderFailed
+      );
+    }
   };
 
   const handleNewSketch = () => {
@@ -358,7 +379,7 @@ export default function Gallery({
                         {t.renameFolder}
                       </button>
                       <button
-                        onClick={() => handleDeleteFolder(name)}
+                        onClick={() => setPendingDelete({ type: "folder", name })}
                         className={`text-xs px-2 py-0.5 rounded transition-colors ${
                           light
                             ? "text-gray-400 hover:text-red-600 hover:bg-red-50"
@@ -378,7 +399,7 @@ export default function Gallery({
                 key={`sketch:${name}`}
                 name={name}
                 onOpen={() => onOpen(joinPath(currentPath, name))}
-                onDelete={() => handleDelete(name)}
+                onDelete={() => setPendingDelete({ type: "sketch", name })}
                 onMove={() => openMoveDialog(name)}
                 theme={theme}
                 language={language}
@@ -434,6 +455,56 @@ export default function Gallery({
                 className="bg-blue-600 hover:bg-blue-500 text-white px-3 py-1.5 rounded text-sm transition-colors"
               >
                 {t.move}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {pendingDelete && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 px-4">
+          <div className={`w-full max-w-sm rounded-lg p-4 shadow-xl ${light ? "bg-white" : "bg-gray-800"}`}>
+            <h2 className={`text-sm font-semibold ${light ? "text-gray-950" : "text-white"}`}>
+              {pendingDelete.type === "sketch" ? t.deleteSketch : t.deleteEmptyFolder}
+            </h2>
+            <p className={`mt-3 text-sm ${light ? "text-gray-600" : "text-gray-300"}`}>
+              {pendingDelete.type === "sketch"
+                ? t.deleteSketchConfirm(pendingDelete.name)
+                : t.deleteEmptyFolderConfirm(pendingDelete.name)}
+            </p>
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                onClick={() => setPendingDelete(null)}
+                className={`${subtleButtonClass} px-3 py-1.5 rounded text-sm transition-colors`}
+              >
+                {t.cancel}
+              </button>
+              <button
+                onClick={confirmDelete}
+                className="bg-red-600 hover:bg-red-500 text-white px-3 py-1.5 rounded text-sm transition-colors"
+              >
+                {pendingDelete.type === "sketch" ? t.deleteSketch : t.deleteEmptyFolder}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {deleteError && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 px-4">
+          <div className={`w-full max-w-sm rounded-lg p-4 shadow-xl ${light ? "bg-white" : "bg-gray-800"}`}>
+            <h2 className={`text-sm font-semibold ${light ? "text-gray-950" : "text-white"}`}>
+              {t.deleteFailed}
+            </h2>
+            <p className={`mt-3 text-sm ${light ? "text-gray-600" : "text-gray-300"}`}>
+              {deleteError}
+            </p>
+            <div className="mt-4 flex justify-end">
+              <button
+                onClick={() => setDeleteError(null)}
+                className="bg-blue-600 hover:bg-blue-500 text-white px-3 py-1.5 rounded text-sm transition-colors"
+              >
+                OK
               </button>
             </div>
           </div>

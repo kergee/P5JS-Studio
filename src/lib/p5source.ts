@@ -150,13 +150,34 @@ export function buildSrcdoc(userCode: string, assets: SketchAssets = {}): string
         'touchEnded'
       ].forEach(wrapSketchFunction);
     })();
-    // Auto-capture canvas thumbnail after 1.5s and send to parent
+    // Auto-capture a compact canvas thumbnail after 1.5s and send to parent.
     setTimeout(function() {
       try {
         var c = document.querySelector('canvas');
         if (c) {
+          var maxSize = 320;
+          var scale = Math.min(1, maxSize / Math.max(c.width, c.height));
+          var width = Math.max(1, Math.round(c.width * scale));
+          var height = Math.max(1, Math.round(c.height * scale));
+          var thumb = document.createElement('canvas');
+          thumb.width = width;
+          thumb.height = height;
+          var ctx = thumb.getContext('2d');
+          ctx.imageSmoothingEnabled = true;
+          ctx.imageSmoothingQuality = 'high';
+          ctx.drawImage(c, 0, 0, width, height);
+          var imageData = ctx.getImageData(0, 0, width, height);
+          var data = imageData.data;
+          var step = 17; // 4 bits per color channel, still encoded as browser PNG.
+          for (var i = 0; i < data.length; i += 4) {
+            data[i] = Math.round(data[i] / step) * step;
+            data[i + 1] = Math.round(data[i + 1] / step) * step;
+            data[i + 2] = Math.round(data[i + 2] / step) * step;
+            data[i + 3] = Math.round(data[i + 3] / step) * step;
+          }
+          ctx.putImageData(imageData, 0, 0);
           window.parent.postMessage(
-            { type: 'p5studio_thumbnail', data: c.toDataURL('image/png') },
+            { type: 'p5studio_thumbnail', data: thumb.toDataURL('image/png') },
             '*'
           );
         }
