@@ -5,6 +5,7 @@ import { tauriApi } from "../lib/tauri";
 
 interface SketchCardProps {
   name: string;
+  sketchPath: string;
   onOpen: () => void;
   onDelete: () => void;
   onMove: () => void;
@@ -12,16 +13,16 @@ interface SketchCardProps {
   language: Language;
 }
 
-export default function SketchCard({ name, onOpen, onDelete, onMove, theme, language }: SketchCardProps) {
+export default function SketchCard({ name, sketchPath, onOpen, onDelete, onMove, theme, language }: SketchCardProps) {
   const [thumbnail, setThumbnail] = useState<string | null>(null);
   const [notes, setNotes] = useState("");
   const light = isLightTheme(theme);
   const t = text[language];
 
   useEffect(() => {
-    tauriApi.getSketchSummary(name).then((s) => setNotes(s.notes));
-    tauriApi.getThumbnail(name).then(setThumbnail);
-  }, [name]);
+    tauriApi.getSketchSummary(sketchPath).then((s) => setNotes(s.notes));
+    tauriApi.getThumbnail(sketchPath).then(setThumbnail);
+  }, [sketchPath]);
 
   return (
     <div
