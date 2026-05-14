@@ -394,17 +394,21 @@ export default function Gallery({
               </div>
             ))}
 
-            {listing.sketches.map((name) => (
-              <SketchCard
-                key={`sketch:${name}`}
-                name={name}
-                onOpen={() => onOpen(joinPath(currentPath, name))}
-                onDelete={() => setPendingDelete({ type: "sketch", name })}
-                onMove={() => openMoveDialog(name)}
-                theme={theme}
-                language={language}
-              />
-            ))}
+            {listing.sketches.map((name) => {
+              const sketchPath = joinPath(currentPath, name);
+              return (
+                <SketchCard
+                  key={`sketch:${sketchPath}`}
+                  name={name}
+                  sketchPath={sketchPath}
+                  onOpen={() => onOpen(sketchPath)}
+                  onDelete={() => setPendingDelete({ type: "sketch", name })}
+                  onMove={() => openMoveDialog(name)}
+                  theme={theme}
+                  language={language}
+                />
+              );
+            })}
           </div>
         </div>
       ) : (

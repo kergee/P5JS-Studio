@@ -192,8 +192,8 @@ src-tauri/target/release/bundle/
 2. 推送版本标签：
 
 ```bash
-git tag v1.2.3
-git push origin v1.2.3
+git tag v1.2.4
+git push origin v1.2.4
 ```
 
 推送匹配 `v*` 的 tag 后，会通过 `tauri-apps/tauri-action` 创建一个草稿版 GitHub Release。
@@ -205,8 +205,8 @@ git push origin v1.2.3
 一个实用发布流程是：
 
 ```bash
-git tag v1.2.3
-git push origin v1.2.3
+git tag v1.2.4
+git push origin v1.2.4
 ```
 
 然后打开 **GitHub > Releases**，编辑草稿 Release，点击 **Generate release notes**，检查内容后发布。
