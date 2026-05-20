@@ -15,6 +15,7 @@ function clampPreviewScale(scale: number) {
 interface PreviewProps {
   code: string;
   assets?: Record<string, string>;
+  libraries?: string[];
   runTrigger: number;
   onThumbnail?: (dataUrl: string) => void;
   debugMessages: DebugMessage[];
@@ -28,6 +29,7 @@ interface PreviewProps {
 export default function Preview({
   code,
   assets = {},
+  libraries = [],
   runTrigger,
   onThumbnail,
   debugMessages,
@@ -39,6 +41,7 @@ export default function Preview({
 }: PreviewProps) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const [previewScale, setPreviewScale] = useState(1);
+  const [debugCollapsed, setDebugCollapsed] = useState(false);
   const light = isLightTheme(theme);
   const t = text[language];
 
@@ -62,7 +65,7 @@ export default function Preview({
     if (runTrigger === 0) return;
     onRunStart?.();
     if (iframeRef.current) {
-      iframeRef.current.srcdoc = buildSrcdoc(code, assets);
+      iframeRef.current.srcdoc = buildSrcdoc(code, assets, libraries);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [runTrigger]);
@@ -99,6 +102,16 @@ export default function Preview({
     ? "hover:bg-gray-100 text-gray-600 hover:text-gray-950"
     : "hover:bg-gray-800 text-gray-400 hover:text-white";
 
+  const debugSummary = (() => {
+    if (debugMessages.length === 0) return t.noLogs;
+    const level = debugMessages.some((message) => message.level === "error")
+      ? t.debugLevelError
+      : debugMessages.some((message) => message.level === "warn")
+        ? t.debugLevelWarning
+        : t.debugLevelLog;
+    return `${debugMessages.length} ${t.debugLogs} · ${level}`;
+  })();
+
   const renderPreviewToolbar = () => (
     <div
       className={`absolute right-3 top-3 z-10 flex items-center gap-1 rounded border px-1.5 py-1 text-xs ${previewToolbarClass}`}
@@ -128,17 +141,35 @@ export default function Preview({
   );
 
   const renderDebugConsole = () => (
-    <div className={`h-36 border-t text-xs flex flex-col ${consoleClass}`}>
+    <div className={`${debugCollapsed ? "h-9" : "h-36"} border-t text-xs flex flex-col ${consoleClass}`}>
       <div
         className={`flex items-center justify-between px-3 py-1.5 border-b ${
           light ? "border-gray-200" : "border-gray-700"
         }`}
       >
-        <span className={light ? "text-gray-600" : "text-gray-400"}>
-          {t.debugConsole}
-        </span>
         <button
-          onClick={onClearDebug}
+          type="button"
+          onClick={() => setDebugCollapsed((value) => !value)}
+          className={`min-w-0 flex-1 rounded px-1 py-0.5 text-left transition-colors ${
+            light
+              ? "text-gray-600 hover:bg-gray-100 hover:text-gray-950"
+              : "text-gray-400 hover:bg-gray-800 hover:text-white"
+          }`}
+          title={debugCollapsed ? t.showDebugConsole : t.hideDebugConsole}
+        >
+          <span className="font-medium">{t.debugConsole}</span>
+          <span className={light ? "ml-2 text-gray-400" : "ml-2 text-gray-500"}>
+            {debugSummary}
+          </span>
+          <span className={light ? "ml-2 text-gray-400" : "ml-2 text-gray-500"}>
+            {debugCollapsed ? t.showDebugConsole : t.hideDebugConsole}
+          </span>
+        </button>
+        <button
+          onClick={(event) => {
+            event.stopPropagation();
+            onClearDebug?.();
+          }}
           className={`px-2 py-0.5 rounded transition-colors ${
             light
               ? "text-gray-500 hover:text-gray-900 hover:bg-gray-100"
@@ -148,34 +179,36 @@ export default function Preview({
           {t.clear}
         </button>
       </div>
-      <div className="flex-1 overflow-auto px-3 py-2 font-mono whitespace-pre-wrap">
-        {debugMessages.length === 0 ? (
-          <div className={light ? "text-gray-400" : "text-gray-600"}>
-            {t.noLogs}
-          </div>
-        ) : (
-          debugMessages.map((message, index) => {
-            const color =
-              message.level === "error"
-                ? "text-red-500"
-                : message.level === "warn"
-                  ? "text-amber-500"
-                  : light
-                    ? "text-blue-700"
-                    : "text-blue-300";
-            const location =
-              message.line !== undefined
-                ? ` (line ${message.line}${message.column !== undefined ? `, column ${message.column}` : ""})`
-                : "";
-            return (
-              <div key={`${message.timestamp}-${index}`} className={color}>
-                <span>[{message.level}] </span>
-                <span>{message.message}{location}</span>
-              </div>
-            );
-          })
-        )}
-      </div>
+      {!debugCollapsed && (
+        <div className="flex-1 overflow-auto px-3 py-2 font-mono whitespace-pre-wrap">
+          {debugMessages.length === 0 ? (
+            <div className={light ? "text-gray-400" : "text-gray-600"}>
+              {t.noLogs}
+            </div>
+          ) : (
+            debugMessages.map((message, index) => {
+              const color =
+                message.level === "error"
+                  ? "text-red-500"
+                  : message.level === "warn"
+                    ? "text-amber-500"
+                    : light
+                      ? "text-blue-700"
+                      : "text-blue-300";
+              const location =
+                message.line !== undefined
+                  ? ` (line ${message.line}${message.column !== undefined ? `, column ${message.column}` : ""})`
+                  : "";
+              return (
+                <div key={`${message.timestamp}-${index}`} className={color}>
+                  <span>[{message.level}] </span>
+                  <span>{message.message}{location}</span>
+                </div>
+              );
+            })
+          )}
+        </div>
+      )}
     </div>
   );
 

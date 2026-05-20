@@ -1,9 +1,81 @@
 import p5Source from "p5/lib/p5.min.js?raw";
+import p5SoundSource from "p5/lib/addons/p5.sound.min.js?raw";
 
 type SketchAssets = Record<string, string>;
+type SketchLibraries = string[];
 
-export function buildSrcdoc(userCode: string, assets: SketchAssets = {}): string {
+function escapeScript(source: string) {
+  return source.replace(/<\/script/gi, "<\\/script");
+}
+
+function escapeAttribute(value: string) {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/"/g, "&quot;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+function resolveAssetDataUrl(path: string, assets: SketchAssets) {
+  if (/^(data:|blob:|https?:)/i.test(path)) return path;
+  const cleaned = path.split("#")[0].split("?")[0].replace(/^\.\//, "");
+  return assets[path] || assets[cleaned] || assets[`/${cleaned}`] || null;
+}
+
+function decodeDataUrl(dataUrl: string) {
+  if (!dataUrl.startsWith("data:")) return null;
+  const commaIndex = dataUrl.indexOf(",");
+  if (commaIndex === -1) return null;
+
+  const header = dataUrl.slice(0, commaIndex);
+  const body = dataUrl.slice(commaIndex + 1);
+  if (header.includes(";base64")) {
+    const binary = atob(body);
+    const bytes = new Uint8Array(binary.length);
+    for (let index = 0; index < binary.length; index += 1) {
+      bytes[index] = binary.charCodeAt(index);
+    }
+    return new TextDecoder().decode(bytes);
+  }
+  return decodeURIComponent(body);
+}
+
+function debugScript(message: string) {
+  const json = JSON.stringify(message).replace(/<\//g, "<\\/");
+  return `<script>window.__p5studioDebug('error', [${json}]);</script>`;
+}
+
+function buildLibraryScripts(libraries: SketchLibraries, assets: SketchAssets) {
+  return libraries
+    .map((library) => library.trim())
+    .filter(Boolean)
+    .map((library) => {
+      const dataUrl = resolveAssetDataUrl(library, assets);
+      if (!dataUrl) {
+        return debugScript(`Library not found: ${library}`);
+      }
+
+      const source = decodeDataUrl(dataUrl);
+      if (source === null) {
+        return debugScript(`Library could not be loaded as a local script: ${library}`);
+      }
+
+      const sourceUrl = library.replace(/[\r\n]/g, " ");
+      return `<script data-p5studio-library="${escapeAttribute(library)}">
+${escapeScript(source)}
+//# sourceURL=${sourceUrl}
+</script>`;
+    })
+    .join("\n");
+}
+
+export function buildSrcdoc(
+  userCode: string,
+  assets: SketchAssets = {},
+  libraries: SketchLibraries = []
+): string {
   const assetJson = JSON.stringify(assets).replace(/<\//g, "<\\/");
+  const libraryScripts = buildLibraryScripts(libraries, assets);
 
   return `<!DOCTYPE html>
 <html>
@@ -75,7 +147,8 @@ export function buildSrcdoc(userCode: string, assets: SketchAssets = {}): string
       document.documentElement.style.setProperty('zoom', String(scale));
     });
   </script>
-  <script>${p5Source}</script>
+  <script>${escapeScript(p5Source)}</script>
+  <script>${escapeScript(p5SoundSource)}</script>
   <script>
     if (window.p5) {
       window.p5.disableFriendlyErrors = true;
@@ -195,8 +268,9 @@ export function buildSrcdoc(userCode: string, assets: SketchAssets = {}): string
     })();
 
   </script>
+  ${libraryScripts}
   <script>
-    ${userCode}
+    ${escapeScript(userCode)}
   </script>
   <script>
     (function() {

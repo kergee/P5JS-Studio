@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useRef } from "react";
+import { useState, useCallback, useEffect, useRef, type PointerEvent as ReactPointerEvent } from "react";
 import CodeMirror from "@uiw/react-codemirror";
 import { javascript } from "@codemirror/lang-javascript";
 import { oneDark } from "@codemirror/theme-one-dark";
@@ -20,9 +20,24 @@ const MIN_EDITOR_FONT_SIZE = 10;
 const MAX_EDITOR_FONT_SIZE = 24;
 const DEFAULT_EDITOR_FONT_SIZE = 13;
 const EDITOR_FONT_SIZE_KEY = "p5js-studio-editor-font-size";
+const MIN_EDITOR_WIDTH_PERCENT = 25;
+const MAX_EDITOR_WIDTH_PERCENT = 75;
+const DEFAULT_EDITOR_WIDTH_PERCENT = 50;
+const EDITOR_PREVIEW_SPLIT_KEY = "p5js-studio-editor-preview-split";
 
 function clampEditorFontSize(size: number) {
   return Math.min(MAX_EDITOR_FONT_SIZE, Math.max(MIN_EDITOR_FONT_SIZE, size));
+}
+
+function clampEditorWidthPercent(width: number) {
+  return Math.min(MAX_EDITOR_WIDTH_PERCENT, Math.max(MIN_EDITOR_WIDTH_PERCENT, width));
+}
+
+function readStoredEditorWidthPercent() {
+  const stored = Number(localStorage.getItem(EDITOR_PREVIEW_SPLIT_KEY));
+  return Number.isFinite(stored)
+    ? clampEditorWidthPercent(stored)
+    : DEFAULT_EDITOR_WIDTH_PERCENT;
 }
 
 function joinPath(parent: string, child: string) {
@@ -63,10 +78,13 @@ export default function Editor({ initialName, onBack, theme, onToggleTheme, lang
   const [notes, setNotes] = useState("");
   const [showNotes, setShowNotes] = useState(false);
   const [assets, setAssets] = useState<SketchAssets>({});
+  const [libraries, setLibraries] = useState<string[]>([]);
   const [runTrigger, setRunTrigger] = useState(0);
   const [savedMsg, setSavedMsg] = useState(false);
   const [formatMsg, setFormatMsg] = useState<string | null>(null);
   const [debugMessages, setDebugMessages] = useState<DebugMessage[]>([]);
+  const [editorWidthPercent, setEditorWidthPercent] = useState(readStoredEditorWidthPercent);
+  const [isResizing, setIsResizing] = useState(false);
   const [fontSize, setFontSize] = useState(() => {
     const stored = Number(localStorage.getItem(EDITOR_FONT_SIZE_KEY));
     return Number.isFinite(stored)
@@ -74,6 +92,7 @@ export default function Editor({ initialName, onBack, theme, onToggleTheme, lang
       : DEFAULT_EDITOR_FONT_SIZE;
   });
   const { addSketch, sketches } = useSketchStore();
+  const splitContainerRef = useRef<HTMLDivElement>(null);
   const pendingThumbnail = useRef<string | null>(null);
   const light = isLightTheme(theme);
   const t = text[language];
@@ -88,6 +107,7 @@ export default function Editor({ initialName, onBack, theme, onToggleTheme, lang
         setFiles(data.files.length > 0 ? data.files : [{ name: "sketch.js", code: "" }]);
         setActiveFile(data.files[0]?.name ?? "sketch.js");
         setNotes(data.notes);
+        setLibraries(data.libraries ?? []);
       });
       tauriApi.getSketchAssets(initialName).then(setAssets);
     }
@@ -112,6 +132,55 @@ export default function Editor({ initialName, onBack, theme, onToggleTheme, lang
   useEffect(() => {
     localStorage.setItem(EDITOR_FONT_SIZE_KEY, String(fontSize));
   }, [fontSize]);
+
+  useEffect(() => {
+    localStorage.setItem(EDITOR_PREVIEW_SPLIT_KEY, String(editorWidthPercent));
+  }, [editorWidthPercent]);
+
+  const updateSplitFromClientX = useCallback((clientX: number) => {
+    const rect = splitContainerRef.current?.getBoundingClientRect();
+    if (!rect || rect.width <= 0) return;
+    const nextWidth = ((clientX - rect.left) / rect.width) * 100;
+    setEditorWidthPercent(Number(clampEditorWidthPercent(nextWidth).toFixed(1)));
+  }, []);
+
+  const startResize = useCallback((event: ReactPointerEvent<HTMLButtonElement>) => {
+    event.preventDefault();
+    setIsResizing(true);
+    updateSplitFromClientX(event.clientX);
+  }, [updateSplitFromClientX]);
+
+  const adjustEditorWidth = useCallback((delta: number) => {
+    setEditorWidthPercent((width) => clampEditorWidthPercent(width + delta));
+  }, []);
+
+  useEffect(() => {
+    if (!isResizing) return;
+
+    const handlePointerMove = (event: PointerEvent) => {
+      event.preventDefault();
+      updateSplitFromClientX(event.clientX);
+    };
+    const stopResize = () => setIsResizing(false);
+    const previousCursor = document.body.style.cursor;
+    const previousUserSelect = document.body.style.userSelect;
+
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", stopResize);
+    window.addEventListener("pointercancel", stopResize);
+    window.addEventListener("blur", stopResize);
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+
+    return () => {
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", stopResize);
+      window.removeEventListener("pointercancel", stopResize);
+      window.removeEventListener("blur", stopResize);
+      document.body.style.cursor = previousCursor;
+      document.body.style.userSelect = previousUserSelect;
+    };
+  }, [isResizing, updateSplitFromClientX]);
 
   const updateCode = useCallback((code: string) => {
     setFiles((prev) =>
@@ -153,6 +222,8 @@ export default function Editor({ initialName, onBack, theme, onToggleTheme, lang
     }
     // Save notes
     await tauriApi.saveNotes(name, notes);
+    // Preserve per-sketch library declarations from meta.json.
+    await tauriApi.saveLibraries(name, libraries);
     // Save pending thumbnail if any
     if (pendingThumbnail.current) {
       await tauriApi.saveThumbnail(name, pendingThumbnail.current);
@@ -160,7 +231,7 @@ export default function Editor({ initialName, onBack, theme, onToggleTheme, lang
     }
     setSavedMsg(true);
     setTimeout(() => setSavedMsg(false), 2000);
-  }, [name, files, notes, sketches, addSketch]);
+  }, [name, files, notes, libraries, sketches, addSketch]);
 
   const run = useCallback(async () => {
     await save();
@@ -360,9 +431,10 @@ export default function Editor({ initialName, onBack, theme, onToggleTheme, lang
       )}
 
       {/* Editor + Preview */}
-      <div className="flex flex-1 overflow-hidden">
+      <div ref={splitContainerRef} className="relative flex flex-1 overflow-hidden">
         <div
-          className={`w-1/2 overflow-hidden border-r ${light ? "border-gray-200" : "border-gray-700"}`}
+          className="min-w-0 shrink-0 overflow-hidden"
+          style={{ width: `${editorWidthPercent}%` }}
           onWheel={(event) => {
             if (!event.ctrlKey) return;
             event.preventDefault();
@@ -380,10 +452,57 @@ export default function Editor({ initialName, onBack, theme, onToggleTheme, lang
             basicSetup={{ lineNumbers: true, foldGutter: true, autocompletion: true }}
           />
         </div>
-        <div className={`w-1/2 ${light ? "bg-gray-100" : "bg-black"}`}>
+        <button
+          type="button"
+          role="separator"
+          aria-label={t.resizeEditorPreview}
+          aria-orientation="vertical"
+          aria-valuemin={MIN_EDITOR_WIDTH_PERCENT}
+          aria-valuemax={MAX_EDITOR_WIDTH_PERCENT}
+          aria-valuenow={Math.round(editorWidthPercent)}
+          onPointerDown={startResize}
+          onDoubleClick={() => setEditorWidthPercent(DEFAULT_EDITOR_WIDTH_PERCENT)}
+          onKeyDown={(event) => {
+            if (event.key === "ArrowLeft") {
+              event.preventDefault();
+              adjustEditorWidth(-2);
+            }
+            if (event.key === "ArrowRight") {
+              event.preventDefault();
+              adjustEditorWidth(2);
+            }
+            if (event.key === "Home") {
+              event.preventDefault();
+              setEditorWidthPercent(MIN_EDITOR_WIDTH_PERCENT);
+            }
+            if (event.key === "End") {
+              event.preventDefault();
+              setEditorWidthPercent(MAX_EDITOR_WIDTH_PERCENT);
+            }
+          }}
+          className={`group relative z-20 w-2 shrink-0 cursor-col-resize outline-none transition-colors focus-visible:bg-blue-500/20 ${
+            light ? "bg-gray-100 hover:bg-gray-200" : "bg-gray-800 hover:bg-gray-700"
+          }`}
+          title={t.resizeEditorPreview}
+        >
+          <span
+            className={`absolute left-1/2 top-0 h-full w-px -translate-x-1/2 transition-colors ${
+              isResizing
+                ? "bg-blue-500"
+                : light
+                  ? "bg-gray-300 group-hover:bg-gray-400"
+                  : "bg-gray-600 group-hover:bg-gray-500"
+            }`}
+          />
+        </button>
+        <div
+          className={`min-w-0 shrink-0 ${light ? "bg-gray-100" : "bg-black"}`}
+          style={{ width: `${100 - editorWidthPercent}%` }}
+        >
           <Preview
             code={combinedCode}
             assets={assets}
+            libraries={libraries}
             runTrigger={runTrigger}
             onThumbnail={handleThumbnail}
             debugMessages={debugMessages}
@@ -393,6 +512,7 @@ export default function Editor({ initialName, onBack, theme, onToggleTheme, lang
             language={language}
           />
         </div>
+        {isResizing && <div className="fixed inset-0 z-50 cursor-col-resize" />}
       </div>
     </div>
   );

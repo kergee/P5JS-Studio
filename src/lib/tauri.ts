@@ -8,6 +8,7 @@ export interface SketchFile {
 export interface SketchData {
   files: SketchFile[];
   notes: string;
+  libraries: string[];
   thumbnail: string | null;
 }
 
@@ -48,6 +49,8 @@ export const tauriApi = {
     invoke<void>("remove_sketch_file", { sketchName, fileName }),
   saveNotes: (sketchName: string, notes: string) =>
     invoke<void>("save_notes", { sketchName, notes }),
+  saveLibraries: (sketchName: string, libraries: string[]) =>
+    invoke<void>("save_libraries", { sketchName, libraries }),
   saveThumbnail: (sketchName: string, dataUrl: string) =>
     invoke<void>("save_thumbnail", { sketchName, dataUrl }),
 
