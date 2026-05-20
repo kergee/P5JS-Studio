@@ -2,7 +2,7 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-P5JS Studio is a local desktop IDE for [p5.js](https://p5js.org) creative coding, built with Tauri, React, TypeScript, and CodeMirror. It lets you write, run, organize, debug, and back up sketches offline, with a built-in gallery, folder-based sketch management, live preview, multi-file sketches, notes, thumbnails, local image assets, editor formatting, p5-aware autocomplete, debug output, preview zoom, and light/dark themes.
+P5JS Studio is a local desktop IDE for [p5.js](https://p5js.org) creative coding, built with Tauri, React, TypeScript, and CodeMirror. It lets you write, run, organize, debug, and back up sketches offline, with a built-in gallery, folder-based sketch management, live preview, multi-file sketches, notes, thumbnails, local assets and libraries, editor formatting, p5-aware autocomplete, debug output, preview zoom, and light/dark themes.
 
 ## Features
 
@@ -25,7 +25,7 @@ P5JS Studio is a local desktop IDE for [p5.js](https://p5js.org) creative coding
 
 ### Editor
 
-- Split-pane layout with CodeMirror on the left and live p5 preview on the right.
+- Resizable split-pane layout with CodeMirror on the left and live p5 preview on the right.
 - Multi-file sketches: add extra `.js` files from the tab bar.
 - All files in one sketch are concatenated in tab order and share the same global p5 scope.
 - Per-sketch notes panel.
@@ -43,6 +43,7 @@ P5JS Studio is a local desktop IDE for [p5.js](https://p5js.org) creative coding
 - Large canvases can be inspected with scrollbars.
 - Preview zoom controls let you zoom out from very large canvases or reset to 100%.
 - Debug Console captures `console.log`, `console.warn`, and `console.error`.
+- Debug Console can be collapsed from its title bar while still showing log count and severity.
 - Runtime errors, syntax errors, and unhandled Promise rejections are shown in the Debug Console.
 - Thumbnails are captured automatically after running a sketch.
 
@@ -77,9 +78,24 @@ sketches/
 
 Sketch-local assets take priority over `public` assets with the same path. Supported image formats include `png`, `jpg`, `jpeg`, `gif`, `webp`, `bmp`, and `svg`.
 
+### Third-party Libraries
+
+`p5.sound` is bundled and loaded by default, so sound sketches can use APIs such as `loadSound()` without extra setup.
+
+For other classic browser/global JavaScript libraries, place the library file in the sketch folder or the shared `public` folder, then list it in `meta.json`:
+
+```json
+{
+  "files": ["sketch.js"],
+  "libraries": ["libraries/matter.min.js", "libraries/p5.play.js"]
+}
+```
+
+Libraries load in the listed order before your sketch code. Sketch-local libraries take priority over shared `public` libraries with the same path. Missing library paths are reported in the Debug Console.
+
 ### Offline-first
 
-p5.js v1 is bundled into the app at build time through Vite raw imports, so sketches can run without an internet connection.
+p5.js v1 and p5.sound are bundled into the app at build time through Vite raw imports, so sketches can run without an internet connection.
 
 ## Keyboard Shortcuts
 
@@ -240,13 +256,17 @@ function preload() {
 }
 ```
 
+### Use Libraries
+
+Put third-party `.js` files beside the sketch or in `public`, then add them to the sketch `meta.json` `libraries` array. They load before your sketch files and are included in ZIP backup and restore.
+
 ### Back Up Sketches
 
 Use **Export ZIP** to back up all sketch folders, including code, notes, thumbnails, and assets. Use **Import ZIP** to restore them.
 
 ### Debug a Sketch
 
-Use `console.log(...)` in your p5 code and check the Debug Console under the preview. Syntax errors, common misspelled p5 functions, runtime errors, and async errors are also reported there.
+Use `console.log(...)` in your p5 code and check the Debug Console under the preview. Click the Debug Console title bar to hide or show it. Syntax errors, common misspelled p5 functions, runtime errors, and async errors are also reported there.
 
 ## Roadmap
 

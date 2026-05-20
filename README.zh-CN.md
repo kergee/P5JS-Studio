@@ -2,7 +2,7 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-P5JS Studio 是一个本地桌面版 [p5.js](https://p5js.org) 创意编程 IDE，基于 Tauri、React、TypeScript 和 CodeMirror 构建。它可以离线编写、运行、整理、调试和备份草图，内置图库、文件夹式草图管理、实时预览、多文件草图、笔记、缩略图、本地图片资源、代码格式化、p5 补全提示、调试输出、预览缩放，以及亮色/暗色主题。
+P5JS Studio 是一个本地桌面版 [p5.js](https://p5js.org) 创意编程 IDE，基于 Tauri、React、TypeScript 和 CodeMirror 构建。它可以离线编写、运行、整理、调试和备份草图，内置图库、文件夹式草图管理、实时预览、多文件草图、笔记、缩略图、本地资源和第三方库、代码格式化、p5 补全提示、调试输出、预览缩放，以及亮色/暗色主题。
 
 ## 功能
 
@@ -25,7 +25,7 @@ P5JS Studio 是一个本地桌面版 [p5.js](https://p5js.org) 创意编程 IDE�
 
 ### 编辑器
 
-- 左侧 CodeMirror 编辑器，右侧 p5 实时预览。
+- 左侧 CodeMirror 编辑器，右侧 p5 实时预览，中间分割线可左右拖动。
 - 支持多文件草图，可通过文件标签栏添加额外 `.js` 文件。
 - 同一个草图内的所有文件会按标签顺序拼接运行，并共享同一个 p5 全局作用域。
 - 每个草图都有独立笔记面板。
@@ -43,6 +43,7 @@ P5JS Studio 是一个本地桌面版 [p5.js](https://p5js.org) 创意编程 IDE�
 - 大尺寸画布可以通过滚动条查看。
 - 预览缩放控件可以缩小超大画布，也可以一键恢复到 100%。
 - Debug Console 会捕获 `console.log`、`console.warn` 和 `console.error`。
+- Debug Console 可通过标题栏收起，收起后仍会显示日志数量和最高级别提示。
 - 运行时错误、语法错误和未处理的 Promise 异常会显示在 Debug Console 中。
 - 缩略图会在运行草图后自动截取保存。
 
@@ -77,9 +78,24 @@ sketches/
 
 如果草图目录和 `public` 目录里有同名资源，草图目录中的文件优先。当前支持的图片格式包括 `png`、`jpg`、`jpeg`、`gif`、`webp`、`bmp` 和 `svg`。
 
+### 第三方库
+
+`p5.sound` 已内置并默认加载，所以声音类草图可以直接使用 `loadSound()` 等 API。
+
+其他经典浏览器全局脚本库，可以把 `.js` 文件放到草图目录或共享 `public` 文件夹，然后在 `meta.json` 中声明：
+
+```json
+{
+  "files": ["sketch.js"],
+  "libraries": ["libraries/matter.min.js", "libraries/p5.play.js"]
+}
+```
+
+库会按数组顺序在草图代码之前加载。草图目录里的同名库优先于 `public` 中的共享库。缺失的库路径会显示在 Debug Console 中。
+
 ### 离线优先
 
-p5.js v1 会在构建时通过 Vite raw import 打包进应用，因此草图运行不需要联网。
+p5.js v1 和 p5.sound 会在构建时通过 Vite raw import 打包进应用，因此草图运行不需要联网。
 
 ## 快捷键
 
@@ -240,13 +256,17 @@ function preload() {
 }
 ```
 
+### 使用第三方库
+
+把第三方 `.js` 文件放到草图目录或 `public` 目录，然后把路径加入草图 `meta.json` 的 `libraries` 数组。库会先于草图文件加载，并会跟随 ZIP 导入导出一起备份和恢复。
+
 ### 备份草图
 
 使用 **Export ZIP** 备份所有草图文件夹，包括代码、笔记、缩略图和资源文件。使用 **Import ZIP** 可以恢复备份。
 
 ### 调试草图
 
-可以在 p5 代码中使用 `console.log(...)`，然后查看预览区底部的 Debug Console。语法错误、常见 p5 函数拼写错误、运行时错误和异步错误也会显示在那里。
+可以在 p5 代码中使用 `console.log(...)`，然后查看预览区底部的 Debug Console。点击 Debug Console 标题栏可以隐藏或显示控制台。语法错误、常见 p5 函数拼写错误、运行时错误和异步错误也会显示在那里。
 
 ## Roadmap
 

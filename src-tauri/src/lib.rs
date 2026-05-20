@@ -14,6 +14,8 @@ struct SketchMeta {
     notes: String,
     #[serde(default)]
     files: Vec<String>,
+    #[serde(default)]
+    libraries: Vec<String>,
 }
 
 #[derive(Serialize, Clone)]
@@ -26,6 +28,7 @@ struct SketchFile {
 struct SketchData {
     files: Vec<SketchFile>,
     notes: String,
+    libraries: Vec<String>,
     thumbnail: Option<String>, // base64 data URL
 }
 
@@ -150,6 +153,7 @@ fn asset_mime_type(path: &PathBuf) -> &'static str {
         "woff" => "font/woff",
         "woff2" => "font/woff2",
         "json" => "application/json",
+        "js" | "mjs" => "text/javascript",
         "txt" => "text/plain",
         "csv" => "text/csv",
         "tsv" => "text/tab-separated-values",
@@ -230,6 +234,7 @@ fn migrate_old_sketches(base: &PathBuf) {
                     let meta = SketchMeta {
                         notes: String::new(),
                         files: vec!["sketch.js".to_string()],
+                        libraries: Vec::new(),
                     };
                     let _ = write_meta(&folder, &meta);
                     let _ = fs::remove_file(&path);
@@ -376,6 +381,7 @@ fn get_sketch(app: AppHandle, name: String) -> Result<SketchData, String> {
     Ok(SketchData {
         files,
         notes: meta.notes,
+        libraries: meta.libraries,
         thumbnail: thumbnail_data_url(&dir),
     })
 }
@@ -485,6 +491,18 @@ fn save_notes(app: AppHandle, sketch_name: String, notes: String) -> Result<(), 
 }
 
 #[tauri::command]
+fn save_libraries(
+    app: AppHandle,
+    sketch_name: String,
+    libraries: Vec<String>,
+) -> Result<(), String> {
+    let dir = sketch_dir(&app, &sketch_name)?;
+    let mut meta = read_meta(&dir);
+    meta.libraries = libraries;
+    write_meta(&dir, &meta)
+}
+
+#[tauri::command]
 fn save_thumbnail(app: AppHandle, sketch_name: String, data_url: String) -> Result<(), String> {
     let b64 = data_url
         .strip_prefix("data:image/png;base64,")
@@ -512,6 +530,7 @@ fn import_sketch(app: AppHandle, path: String, name: String) -> Result<(), Strin
     let meta = SketchMeta {
         notes: String::new(),
         files: vec!["sketch.js".to_string()],
+        libraries: Vec::new(),
     };
     write_meta(&dir, &meta)
 }
@@ -687,7 +706,11 @@ fn import_sketches_zip(app: AppHandle, zip_path: String) -> Result<Vec<String>, 
             zf.read_to_string(&mut code).map_err(|e| e.to_string())?;
             fs::write(dir.join("sketch.js"), &code).map_err(|e| e.to_string())?;
             if !dir.join("meta.json").exists() {
-                let meta = SketchMeta { notes: String::new(), files: vec!["sketch.js".to_string()] };
+                let meta = SketchMeta {
+                    notes: String::new(),
+                    files: vec!["sketch.js".to_string()],
+                    libraries: Vec::new(),
+                };
                 write_meta(&dir, &meta).ok();
             }
             imported.insert(stem.to_string());
@@ -735,6 +758,7 @@ pub fn run() {
             add_sketch_file,
             remove_sketch_file,
             save_notes,
+            save_libraries,
             save_thumbnail,
             delete_sketch,
             import_sketch,
