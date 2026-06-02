@@ -236,7 +236,8 @@ export default function Preview({
         {renderPreviewToolbar()}
         <iframe
           ref={iframeRef}
-          sandbox="allow-scripts"
+          allow="camera; microphone"
+          sandbox="allow-scripts allow-same-origin"
           className="w-full h-full border-0"
           title="p5.js preview"
           onLoad={() => sendPreviewScale(previewScale)}

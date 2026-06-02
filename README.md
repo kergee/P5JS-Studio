@@ -82,7 +82,7 @@ Sketch-local assets take priority over `public` assets with the same path. Suppo
 
 `p5.sound` is bundled and loaded by default, so sound sketches can use APIs such as `loadSound()` without extra setup.
 
-For other classic browser/global JavaScript libraries, place the library file in the sketch folder or the shared `public` folder, then list it in `meta.json`:
+For other classic browser/global JavaScript libraries, edit the sketch's `meta.json` directly. Place the library file in the sketch folder or the shared `public` folder, then list the relative path in the `libraries` array:
 
 ```json
 {
@@ -91,7 +91,21 @@ For other classic browser/global JavaScript libraries, place the library file in
 }
 ```
 
+Example sketch layout:
+
+```text
+sketches/
+  physics-demo/
+    meta.json
+    sketch.js
+    libraries/
+      matter.min.js
+      p5.play.js
+```
+
 Libraries load in the listed order before your sketch code. Sketch-local libraries take priority over shared `public` libraries with the same path. Missing library paths are reported in the Debug Console.
+
+This first version does not include a library manager UI. It supports local classic scripts that expose browser globals, not npm package installs, ES module imports, or automatic CDN downloads.
 
 ### Offline-first
 
@@ -258,7 +272,7 @@ function preload() {
 
 ### Use Libraries
 
-Put third-party `.js` files beside the sketch or in `public`, then add them to the sketch `meta.json` `libraries` array. They load before your sketch files and are included in ZIP backup and restore.
+Put third-party `.js` files beside the sketch or in `public`, then add them to the sketch `meta.json` `libraries` array. Edit `meta.json` directly, save it, and run the sketch again. The listed libraries load before your sketch files and are included in ZIP backup and restore.
 
 ### Back Up Sketches
 
