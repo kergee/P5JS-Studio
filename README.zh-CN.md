@@ -82,7 +82,7 @@ sketches/
 
 `p5.sound` 已内置并默认加载，所以声音类草图可以直接使用 `loadSound()` 等 API。
 
-其他经典浏览器全局脚本库，可以把 `.js` 文件放到草图目录或共享 `public` 文件夹，然后在 `meta.json` 中声明：
+其他经典浏览器全局脚本库，第一版就是直接编辑草图目录里的 `meta.json`。把库文件放到草图目录或共享 `public` 文件夹，然后把相对路径写进 `libraries` 数组：
 
 ```json
 {
@@ -91,7 +91,21 @@ sketches/
 }
 ```
 
+示例目录结构：
+
+```text
+sketches/
+  physics-demo/
+    meta.json
+    sketch.js
+    libraries/
+      matter.min.js
+      p5.play.js
+```
+
 库会按数组顺序在草图代码之前加载。草图目录里的同名库优先于 `public` 中的共享库。缺失的库路径会显示在 Debug Console 中。
+
+这一版暂时没有库管理界面。它支持会暴露浏览器全局变量的本地传统脚本，不支持自动安装 npm 包、ES module import，或自动从 CDN 下载。
 
 ### 离线优先
 
@@ -258,7 +272,7 @@ function preload() {
 
 ### 使用第三方库
 
-把第三方 `.js` 文件放到草图目录或 `public` 目录，然后把路径加入草图 `meta.json` 的 `libraries` 数组。库会先于草图文件加载，并会跟随 ZIP 导入导出一起备份和恢复。
+把第三方 `.js` 文件放到草图目录或 `public` 目录，然后把路径加入草图 `meta.json` 的 `libraries` 数组。直接编辑 `meta.json`，保存后重新运行草图即可。库会先于草图文件加载，并会跟随 ZIP 导入导出一起备份和恢复。
 
 ### 备份草图
 
