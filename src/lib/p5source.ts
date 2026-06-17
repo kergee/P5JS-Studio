@@ -88,9 +88,33 @@ export function buildSrcdoc(
   </style>
   <script>
     (function() {
+      function shortenDebugValue(value) {
+        var text = String(value);
+        if (/^data:/i.test(text)) {
+          return text.slice(0, 80) + '...';
+        }
+        return text;
+      }
+
+      function describeEvent(value) {
+        if (typeof Event === 'undefined' || !(value instanceof Event)) return null;
+        var target = value.target || value.currentTarget || value.srcElement;
+        var targetPath = target && (target.currentSrc || target.src || target.href || target.data);
+        var eventName = value.constructor && value.constructor.name ? value.constructor.name : 'Event';
+        var eventType = value.type ? ' "' + value.type + '"' : '';
+        if (targetPath) {
+          return eventName + eventType + ' while loading ' + shortenDebugValue(targetPath);
+        }
+        return eventName + eventType;
+      }
+
       function stringifyDebugValue(value) {
         if (value instanceof Error) {
           return value.stack || value.message;
+        }
+        var eventDescription = describeEvent(value);
+        if (eventDescription) {
+          return eventDescription;
         }
         if (typeof value === 'string') {
           return value;
@@ -163,11 +187,86 @@ export function buildSrcdoc(
         if (typeof path !== 'string') return null;
         if (/^(data:|blob:|https?:)/i.test(path)) return null;
 
-        var cleaned = path.split('#')[0].split('?')[0].replace(/^\\.\\//, '');
+        var cleaned = normalizeAssetPath(path);
         return window.__p5studioAssets[path]
           || window.__p5studioAssets[cleaned]
           || window.__p5studioAssets['/' + cleaned]
           || null;
+      }
+
+      function normalizeAssetPath(path) {
+        var cleaned = String(path).split('#')[0].split('?')[0].replace(/\\\\/g, '/').replace(/^\\/+/, '').replace(/^\\.\\//, '');
+        var parts = [];
+        cleaned.split('/').forEach(function(part) {
+          if (!part || part === '.') return;
+          if (part === '..') {
+            parts.pop();
+            return;
+          }
+          parts.push(part);
+        });
+        return parts.join('/');
+      }
+
+      function assetPathFromFetchInput(input) {
+        var value = '';
+        if (typeof Request !== 'undefined' && input instanceof Request) {
+          value = input.url;
+        } else if (typeof URL !== 'undefined' && input instanceof URL) {
+          value = input.href;
+        } else {
+          value = String(input);
+        }
+        if (/^(data:|blob:)/i.test(value)) return null;
+        if (/^[a-z][a-z0-9+.-]*:/i.test(value)) {
+          try {
+            var parsed = new URL(value);
+            if (parsed.origin !== window.location.origin) return null;
+            value = parsed.pathname;
+          } catch (error) {
+            return null;
+          }
+        }
+        return normalizeAssetPath(value);
+      }
+
+      function responseFromDataUrl(dataUrl, method) {
+        var commaIndex = dataUrl.indexOf(',');
+        if (commaIndex === -1) {
+          return new Response(null, { status: 500, statusText: 'Invalid data URL' });
+        }
+        var header = dataUrl.slice(0, commaIndex);
+        var body = dataUrl.slice(commaIndex + 1);
+        var mimeMatch = header.match(/^data:([^;,]*)/i);
+        var mime = mimeMatch && mimeMatch[1] ? mimeMatch[1] : 'application/octet-stream';
+        var bytes;
+        if (/;base64/i.test(header)) {
+          var binary = atob(body);
+          bytes = new Uint8Array(binary.length);
+          for (var index = 0; index < binary.length; index += 1) {
+            bytes[index] = binary.charCodeAt(index);
+          }
+        } else {
+          bytes = new TextEncoder().encode(decodeURIComponent(body));
+        }
+        return new Response(method === 'HEAD' ? null : bytes, {
+          status: 200,
+          headers: { 'Content-Type': mime, 'Content-Length': String(bytes.length) }
+        });
+      }
+
+      function installAssetFetchInterceptor() {
+        if (typeof window.fetch !== 'function' || typeof Response === 'undefined') return;
+        var originalFetch = window.fetch.bind(window);
+        window.fetch = function(input, init) {
+          var method = String((init && init.method) || (input && input.method) || 'GET').toUpperCase();
+          var assetPath = assetPathFromFetchInput(input);
+          var dataUrl = assetPath ? resolveAssetPath(assetPath) : null;
+          if (dataUrl) {
+            return Promise.resolve(responseFromDataUrl(dataUrl, method));
+          }
+          return originalFetch(input, init);
+        };
       }
 
       function mapAssetPath(value) {
@@ -194,6 +293,25 @@ export function buildSrcdoc(
         };
       }
 
+      function wrapImageLoader(originalLoader) {
+        return function(path) {
+          var args = Array.prototype.slice.call(arguments);
+          var originalPath = path;
+          args[0] = mapAssetPath(path);
+          var userFailure = typeof args[2] === 'function' ? args[2] : null;
+          args[2] = function(error) {
+            if (window.__p5studioDebug) {
+              window.__p5studioDebug('error', [
+                'Failed to load image "' + originalPath + '". Check that the file exists in the sketch folder/public resources and that the path matches exactly.'
+              ]);
+            }
+            if (userFailure) return userFailure.apply(this, arguments);
+            return undefined;
+          };
+          return originalLoader.apply(this, args);
+        };
+      }
+
       function wrapTableLoader(originalLoader) {
         return function(path) {
           var args = Array.prototype.slice.call(arguments);
@@ -210,9 +328,9 @@ export function buildSrcdoc(
         return function(path) {
           var args = Array.prototype.slice.call(arguments);
           var extension = extensionFromPath(path);
-          args[0] = mapAssetPath(path);
-          if ((extension === 'obj' || extension === 'stl') && !args.some(function(arg) { return arg === 'obj' || arg === 'stl'; })) {
-            args[4] = extension;
+          args[0] = path;
+          if ((extension === 'obj' || extension === 'stl') && !args.some(function(arg) { return arg === 'obj' || arg === 'stl' || arg === '.obj' || arg === '.stl'; })) {
+            args[4] = '.' + extension;
           }
           return originalLoader.apply(this, args);
         };
@@ -233,8 +351,9 @@ export function buildSrcdoc(
         }
       }
 
+      installAssetFetchInterceptor();
+
       var singlePathLoaders = [
-        'loadImage',
         'loadFont',
         'loadJSON',
         'loadStrings',
@@ -245,6 +364,9 @@ export function buildSrcdoc(
         'createVideo',
         'createAudio'
       ];
+
+      wrapNamedLoader(window.p5 && window.p5.prototype, 'loadImage', wrapImageLoader);
+      wrapNamedLoader(window, 'loadImage', wrapImageLoader);
 
       singlePathLoaders.forEach(function(name) {
         wrapNamedLoader(window.p5 && window.p5.prototype, name, wrapAssetLoader);

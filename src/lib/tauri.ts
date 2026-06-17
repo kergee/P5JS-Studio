@@ -49,6 +49,10 @@ export const tauriApi = {
     invoke<void>("remove_sketch_file", { sketchName, fileName }),
   saveNotes: (sketchName: string, notes: string) =>
     invoke<void>("save_notes", { sketchName, notes }),
+  getFolderNotes: (path: string) =>
+    invoke<string>("get_folder_notes", { path }),
+  saveFolderNotes: (path: string, notes: string) =>
+    invoke<void>("save_folder_notes", { path, notes }),
   saveLibraries: (sketchName: string, libraries: string[]) =>
     invoke<void>("save_libraries", { sketchName, libraries }),
   saveThumbnail: (sketchName: string, dataUrl: string) =>

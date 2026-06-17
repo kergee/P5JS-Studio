@@ -18,7 +18,7 @@ jobs:
           - platform: macos-latest
             args: --target universal-apple-darwin
           - platform: windows-latest
-            args: ""
+            args: --bundles msi
 
     runs-on: ${{ matrix.platform }}
 
@@ -55,7 +55,7 @@ jobs:
           releaseBody: |
             ## Downloads
             - **macOS** (Universal — Intel + Apple Silicon): `.dmg`
-            - **Windows**: `.exe` installer
+            - **Windows**: `.msi` installer
           releaseDraft: true
           prerelease: false
           args: ${{ matrix.args }}

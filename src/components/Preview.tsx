@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import type { MouseEvent } from "react";
 import { buildSrcdoc } from "../lib/p5source";
 import { DebugMessage } from "../lib/debug";
 import { Language, text } from "../lib/language";
@@ -10,6 +11,36 @@ const PREVIEW_SCALE_STEP = 0.1;
 
 function clampPreviewScale(scale: number) {
   return Math.min(MAX_PREVIEW_SCALE, Math.max(MIN_PREVIEW_SCALE, scale));
+}
+
+function formatDebugMessages(messages: DebugMessage[]) {
+  return messages
+    .map((message) => {
+      const location =
+        message.line !== undefined
+          ? ` (line ${message.line}${message.column !== undefined ? `, column ${message.column}` : ""})`
+          : "";
+      return `[${message.level}] ${message.message}${location}`;
+    })
+    .join("\n");
+}
+
+async function copyTextToClipboard(textValue: string) {
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(textValue);
+    return;
+  }
+
+  const textarea = document.createElement("textarea");
+  textarea.value = textValue;
+  textarea.setAttribute("readonly", "true");
+  textarea.style.position = "fixed";
+  textarea.style.left = "-9999px";
+  textarea.style.top = "0";
+  document.body.appendChild(textarea);
+  textarea.select();
+  document.execCommand("copy");
+  document.body.removeChild(textarea);
 }
 
 interface PreviewProps {
@@ -112,6 +143,15 @@ export default function Preview({
     return `${debugMessages.length} ${t.debugLogs} · ${level}`;
   })();
 
+  const copyDebugMessages = useCallback(
+    (event: MouseEvent<HTMLButtonElement>) => {
+      event.stopPropagation();
+      if (debugMessages.length === 0) return;
+      void copyTextToClipboard(formatDebugMessages(debugMessages));
+    },
+    [debugMessages]
+  );
+
   const renderPreviewToolbar = () => (
     <div
       className={`absolute right-3 top-3 z-10 flex items-center gap-1 rounded border px-1.5 py-1 text-xs ${previewToolbarClass}`}
@@ -165,19 +205,33 @@ export default function Preview({
             {debugCollapsed ? t.showDebugConsole : t.hideDebugConsole}
           </span>
         </button>
-        <button
-          onClick={(event) => {
-            event.stopPropagation();
-            onClearDebug?.();
-          }}
-          className={`px-2 py-0.5 rounded transition-colors ${
-            light
-              ? "text-gray-500 hover:text-gray-900 hover:bg-gray-100"
-              : "text-gray-500 hover:text-white hover:bg-gray-800"
-          }`}
-        >
-          {t.clear}
-        </button>
+        <div className="flex items-center gap-1">
+          <button
+            onClick={copyDebugMessages}
+            disabled={debugMessages.length === 0}
+            className={`px-2 py-0.5 rounded transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
+              light
+                ? "text-gray-500 hover:text-gray-900 hover:bg-gray-100"
+                : "text-gray-500 hover:text-white hover:bg-gray-800"
+            }`}
+            title={t.copyLogs}
+          >
+            {t.copyLogs}
+          </button>
+          <button
+            onClick={(event) => {
+              event.stopPropagation();
+              onClearDebug?.();
+            }}
+            className={`px-2 py-0.5 rounded transition-colors ${
+              light
+                ? "text-gray-500 hover:text-gray-900 hover:bg-gray-100"
+                : "text-gray-500 hover:text-white hover:bg-gray-800"
+            }`}
+          >
+            {t.clear}
+          </button>
+        </div>
       </div>
       {!debugCollapsed && (
         <div className="flex-1 overflow-auto px-3 py-2 font-mono whitespace-pre-wrap">

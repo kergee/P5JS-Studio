@@ -18,6 +18,12 @@ struct SketchMeta {
     libraries: Vec<String>,
 }
 
+#[derive(Serialize, Deserialize, Default, Clone)]
+struct FolderMeta {
+    #[serde(default)]
+    notes: String,
+}
+
 #[derive(Serialize, Clone)]
 struct SketchFile {
     name: String,
@@ -131,6 +137,18 @@ fn write_meta(dir: &PathBuf, meta: &SketchMeta) -> Result<(), String> {
     fs::write(dir.join("meta.json"), json).map_err(|e| e.to_string())
 }
 
+fn read_folder_meta(dir: &PathBuf) -> FolderMeta {
+    fs::read_to_string(dir.join(".folder.json"))
+        .ok()
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or_default()
+}
+
+fn write_folder_meta(dir: &PathBuf, meta: &FolderMeta) -> Result<(), String> {
+    let json = serde_json::to_string_pretty(meta).map_err(|e| e.to_string())?;
+    fs::write(dir.join(".folder.json"), json).map_err(|e| e.to_string())
+}
+
 fn thumbnail_data_url(dir: &PathBuf) -> Option<String> {
     let bytes = fs::read(dir.join("thumbnail.png")).ok()?;
     Some(format!("data:image/png;base64,{}", STANDARD.encode(&bytes)))
@@ -177,7 +195,7 @@ fn should_skip_asset(path: &PathBuf) -> bool {
     let Some(file_name) = path.file_name().map(|name| name.to_string_lossy().to_lowercase()) else {
         return true;
     };
-    file_name == "meta.json" || file_name == "thumbnail.png"
+    file_name == "meta.json" || file_name == ".folder.json" || file_name == "thumbnail.png"
 }
 
 fn collect_sketch_assets(dir: &PathBuf, prefix: &str, assets: &mut HashMap<String, String>) {
@@ -491,6 +509,27 @@ fn save_notes(app: AppHandle, sketch_name: String, notes: String) -> Result<(), 
 }
 
 #[tauri::command]
+fn get_folder_notes(app: AppHandle, path: String) -> Result<String, String> {
+    let base = sketches_dir(&app);
+    let dir = relative_dir(&base, &path)?;
+    if is_sketch_dir(&dir) {
+        return Err("cannot read folder notes from a sketch".to_string());
+    }
+    Ok(read_folder_meta(&dir).notes)
+}
+
+#[tauri::command]
+fn save_folder_notes(app: AppHandle, path: String, notes: String) -> Result<(), String> {
+    let base = sketches_dir(&app);
+    let dir = relative_dir(&base, &path)?;
+    if is_sketch_dir(&dir) {
+        return Err("cannot save folder notes to a sketch".to_string());
+    }
+    fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    write_folder_meta(&dir, &FolderMeta { notes })
+}
+
+#[tauri::command]
 fn save_libraries(
     app: AppHandle,
     sketch_name: String,
@@ -581,9 +620,18 @@ fn delete_folder(app: AppHandle, path: String) -> Result<(), String> {
     if is_sketch_dir(&dir) {
         return Err("cannot delete a sketch with folder delete".to_string());
     }
-    let is_empty = fs::read_dir(&dir).map_err(|e| e.to_string())?.next().is_none();
+    let is_empty = fs::read_dir(&dir).map_err(|e| e.to_string())?.filter_map(|e| e.ok()).all(|entry| {
+        entry
+            .file_name()
+            .to_string_lossy()
+            .eq_ignore_ascii_case(".folder.json")
+    });
     if !is_empty {
         return Err("folder is not empty".to_string());
+    }
+    let folder_meta_path = dir.join(".folder.json");
+    if folder_meta_path.exists() {
+        fs::remove_file(folder_meta_path).map_err(|e| e.to_string())?;
     }
     fs::remove_dir(&dir).map_err(|e| e.to_string())
 }
@@ -758,6 +806,8 @@ pub fn run() {
             add_sketch_file,
             remove_sketch_file,
             save_notes,
+            get_folder_notes,
+            save_folder_notes,
             save_libraries,
             save_thumbnail,
             delete_sketch,
