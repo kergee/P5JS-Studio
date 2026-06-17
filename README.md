@@ -11,6 +11,7 @@ P5JS Studio is a local desktop IDE for [p5.js](https://p5js.org) creative coding
 - File-manager style gallery with folders, breadcrumbs, and sketch cards.
 - Nested folders for organizing sketches by class, topic, assignment, or project.
 - A folder with `meta.json` is treated as a sketch; other folders are treated as categories.
+- Category folders can store their own notes in `.folder.json`.
 - Returning from the editor keeps the current gallery folder and breadcrumb path.
 - Auto-captured thumbnail 1.5 seconds after you run a sketch.
 - Notes excerpt on each sketch card.
@@ -44,6 +45,7 @@ P5JS Studio is a local desktop IDE for [p5.js](https://p5js.org) creative coding
 - Preview zoom controls let you zoom out from very large canvases or reset to 100%.
 - Debug Console captures `console.log`, `console.warn`, and `console.error`.
 - Debug Console can be collapsed from its title bar while still showing log count and severity.
+- Debug Console logs can be copied as plain text from the console toolbar.
 - Runtime errors, syntax errors, and unhandled Promise rejections are shown in the Debug Console.
 - Thumbnails are captured automatically after running a sketch.
 
@@ -151,6 +153,7 @@ The app stores sketches in the Tauri app data directory:
       pic1.png
       thumbnail.png
   class-1/
+    .folder.json
     student-1/
       meta.json
       sketch.js
@@ -158,7 +161,7 @@ The app stores sketches in the Tauri app data directory:
     shared-image.png
 ```
 
-`meta.json` stores notes and the ordered file list. Any folder containing `meta.json` is a sketch folder. Any folder without `meta.json` is a category folder. Old flat single-file `.js` sketches are migrated to the folder format automatically on launch.
+`meta.json` stores sketch notes, library declarations, and the ordered file list. Any folder containing `meta.json` is a sketch folder. Any folder without `meta.json` is a category folder. Category folder notes are stored in `.folder.json` so they do not turn the category into a sketch. Old flat single-file `.js` sketches are migrated to the folder format automatically on launch.
 
 Common app data locations:
 
@@ -213,8 +216,7 @@ This repository includes `.github/workflows/build.yml`.
 The workflow builds release artifacts for:
 
 - macOS universal binary.
-- Windows installer.
-- Linux AppImage.
+- Windows MSI installer.
 
 You can trigger it in two ways:
 
@@ -222,8 +224,8 @@ You can trigger it in two ways:
 2. Push a version tag:
 
 ```bash
-git tag v1.2.5
-git push origin v1.2.5
+git tag v1.2.7
+git push origin v1.2.7
 ```
 
 Tag pushes matching `v*` create a draft GitHub release through `tauri-apps/tauri-action`.
@@ -235,8 +237,8 @@ The current workflow creates a draft GitHub Release with a fixed download sectio
 A practical release flow is:
 
 ```bash
-git tag v1.2.5
-git push origin v1.2.5
+git tag v1.2.7
+git push origin v1.2.7
 ```
 
 Then open **GitHub > Releases**, edit the draft release, click **Generate release notes**, review the generated text, and publish the release.
@@ -260,6 +262,8 @@ Click **+ Add File** in the tab bar. Files are saved inside the sketch folder an
 
 Use **New Folder** to create category folders, then create sketches inside them. Folder breadcrumbs let you navigate back to parent folders. If you open a sketch from a subfolder and return to the gallery, the same folder stays open. Use **Move** on a sketch card to move it to another folder.
 
+Category folders have their own Notes area in the gallery. These notes are saved to `.folder.json` inside that folder. A folder that only contains `.folder.json` is still treated as empty for deletion.
+
 ### Use Images
 
 Place image files in the sketch folder or in the shared `public` folder, then use normal p5 code:
@@ -276,7 +280,14 @@ Put third-party `.js` files beside the sketch or in `public`, then add them to t
 
 ### Back Up Sketches
 
-Use **Export ZIP** to back up all sketch folders, including code, notes, thumbnails, and assets. Use **Import ZIP** to restore them.
+Use **Export ZIP** to back up all sketch folders, including code, sketch notes, folder notes, thumbnails, libraries, and assets. Use **Import ZIP** to restore them.
+
+ZIP import uses a merge-and-overwrite strategy:
+
+- Files and folders that exist in the ZIP but not locally are added.
+- Files that exist both locally and in the ZIP are overwritten without a prompt.
+- Local files that are not present in the ZIP are kept; import does not delete extra local files.
+- The same rule applies to `meta.json`, `.folder.json`, thumbnails, libraries, and assets.
 
 ### Debug a Sketch
 

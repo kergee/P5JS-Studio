@@ -63,6 +63,8 @@ export default function Gallery({
   const [moveDestination, setMoveDestination] = useState("");
   const [pendingDelete, setPendingDelete] = useState<PendingDelete>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [folderNotes, setFolderNotes] = useState("");
+  const [folderNotesLoadedPath, setFolderNotesLoadedPath] = useState<string | null>(null);
   const light = isLightTheme(theme);
   const t = text[language];
   const subtleButtonClass = light
@@ -81,6 +83,35 @@ export default function Gallery({
   useEffect(() => {
     refresh();
   }, [refresh]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setFolderNotesLoadedPath(null);
+    setFolderNotes("");
+    tauriApi
+      .getFolderNotes(currentPath)
+      .then((notes) => {
+        if (cancelled) return;
+        setFolderNotes(notes);
+        setFolderNotesLoadedPath(currentPath);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setFolderNotes("");
+        setFolderNotesLoadedPath(currentPath);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [currentPath]);
+
+  useEffect(() => {
+    if (folderNotesLoadedPath !== currentPath) return;
+    const timer = window.setTimeout(() => {
+      void tauriApi.saveFolderNotes(currentPath, folderNotes);
+    }, 500);
+    return () => window.clearTimeout(timer);
+  }, [currentPath, folderNotes, folderNotesLoadedPath]);
 
   // 拖拽 .js 文件到窗口，导入到当前目录
   useEffect(() => {
@@ -342,6 +373,24 @@ export default function Gallery({
 
       {hasItems ? (
         <div className="flex-1 overflow-auto p-6">
+          <section className="mb-5">
+            <label
+              className={`mb-2 block text-xs font-medium ${light ? "text-gray-600" : "text-gray-400"}`}
+            >
+              {t.folderNotes}
+            </label>
+            <textarea
+              value={folderNotes}
+              onChange={(event) => setFolderNotes(event.target.value)}
+              placeholder={t.addFolderNotesPlaceholder}
+              rows={3}
+              className={`w-full resize-y rounded border px-3 py-2 text-sm outline-none transition-colors ${
+                light
+                  ? "border-gray-200 bg-white text-gray-900 placeholder:text-gray-400 focus:border-blue-400"
+                  : "border-gray-700 bg-gray-800 text-gray-100 placeholder:text-gray-500 focus:border-blue-500"
+              }`}
+            />
+          </section>
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5 gap-4">
             {listing.folders.map((name) => (
               <div
@@ -412,18 +461,38 @@ export default function Gallery({
           </div>
         </div>
       ) : (
-        <div className={`flex-1 flex items-center justify-center ${light ? "text-gray-500" : "text-gray-500"}`}>
-          <div className="text-center">
-            <div className="text-6xl mb-4 opacity-30">{"{ }"}</div>
-            <p className="text-base font-medium">{t.noSketchesHere}</p>
-            <p className={`text-sm mt-2 ${light ? "text-gray-500" : "text-gray-600"}`}>
-              {t.emptyHint.split("\n").map((line, index) => (
-                <span key={line}>
-                  {line}
-                  {index === 0 && <br />}
-                </span>
-              ))}
-            </p>
+        <div className="flex-1 overflow-auto p-6">
+          <section className="mb-10">
+            <label
+              className={`mb-2 block text-xs font-medium ${light ? "text-gray-600" : "text-gray-400"}`}
+            >
+              {t.folderNotes}
+            </label>
+            <textarea
+              value={folderNotes}
+              onChange={(event) => setFolderNotes(event.target.value)}
+              placeholder={t.addFolderNotesPlaceholder}
+              rows={3}
+              className={`w-full resize-y rounded border px-3 py-2 text-sm outline-none transition-colors ${
+                light
+                  ? "border-gray-200 bg-white text-gray-900 placeholder:text-gray-400 focus:border-blue-400"
+                  : "border-gray-700 bg-gray-800 text-gray-100 placeholder:text-gray-500 focus:border-blue-500"
+              }`}
+            />
+          </section>
+          <div className={`flex min-h-80 items-center justify-center ${light ? "text-gray-500" : "text-gray-500"}`}>
+            <div className="text-center">
+              <div className="text-6xl mb-4 opacity-30">{"{ }"}</div>
+              <p className="text-base font-medium">{t.noSketchesHere}</p>
+              <p className={`text-sm mt-2 ${light ? "text-gray-500" : "text-gray-600"}`}>
+                {t.emptyHint.split("\n").map((line, index) => (
+                  <span key={line}>
+                    {line}
+                    {index === 0 && <br />}
+                  </span>
+                ))}
+              </p>
+            </div>
           </div>
         </div>
       )}

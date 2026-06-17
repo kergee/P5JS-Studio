@@ -11,6 +11,7 @@ P5JS Studio 是一个本地桌面版 [p5.js](https://p5js.org) 创意编程 IDE�
 - 文件管理器式图库，支持文件夹、面包屑导航和草图卡片。
 - 支持多层文件夹，可按班级、主题、作业或项目整理草图。
 - 包含 `meta.json` 的文件夹会被识别为草图；没有 `meta.json` 的文件夹会作为分类目录。
+- 分类文件夹也可以保存自己的笔记，笔记会写入 `.folder.json`。
 - 从编辑器返回图库时，会保留当前所在文件夹和面包屑路径。
 - 点击运行草图 1.5 秒后自动截取缩略图。
 - 草图卡片显示笔记摘要。
@@ -44,6 +45,7 @@ P5JS Studio 是一个本地桌面版 [p5.js](https://p5js.org) 创意编程 IDE�
 - 预览缩放控件可以缩小超大画布，也可以一键恢复到 100%。
 - Debug Console 会捕获 `console.log`、`console.warn` 和 `console.error`。
 - Debug Console 可通过标题栏收起，收起后仍会显示日志数量和最高级别提示。
+- Debug Console 工具栏可以一键复制日志为纯文本。
 - 运行时错误、语法错误和未处理的 Promise 异常会显示在 Debug Console 中。
 - 缩略图会在运行草图后自动截取保存。
 
@@ -151,6 +153,7 @@ p5.js v1 和 p5.sound 会在构建时通过 Vite raw import 打包进应用，�
       pic1.png
       thumbnail.png
   class-1/
+    .folder.json
     student-1/
       meta.json
       sketch.js
@@ -158,7 +161,7 @@ p5.js v1 和 p5.sound 会在构建时通过 Vite raw import 打包进应用，�
     shared-image.png
 ```
 
-`meta.json` 保存笔记和文件顺序。任何包含 `meta.json` 的文件夹都会被识别为草图文件夹；不包含 `meta.json` 的文件夹会作为分类目录。旧版单文件 `.js` 草图会在启动时自动迁移为文件夹格式。
+`meta.json` 保存草图笔记、第三方库声明和文件顺序。任何包含 `meta.json` 的文件夹都会被识别为草图文件夹；不包含 `meta.json` 的文件夹会作为分类目录。分类文件夹的笔记保存在 `.folder.json`，所以不会把分类目录误识别成草图。旧版单文件 `.js` 草图会在启动时自动迁移为文件夹格式。
 
 常见系统路径：
 
@@ -213,8 +216,7 @@ src-tauri/target/release/bundle/
 该工作流会构建以下平台的发布文件：
 
 - macOS 通用二进制。
-- Windows 安装包。
-- Linux AppImage。
+- Windows MSI 安装包。
 
 有两种触发方式：
 
@@ -222,8 +224,8 @@ src-tauri/target/release/bundle/
 2. 推送版本标签：
 
 ```bash
-git tag v1.2.5
-git push origin v1.2.5
+git tag v1.2.7
+git push origin v1.2.7
 ```
 
 推送匹配 `v*` 的 tag 后，会通过 `tauri-apps/tauri-action` 创建一个草稿版 GitHub Release。
@@ -235,8 +237,8 @@ git push origin v1.2.5
 一个实用发布流程是：
 
 ```bash
-git tag v1.2.5
-git push origin v1.2.5
+git tag v1.2.7
+git push origin v1.2.7
 ```
 
 然后打开 **GitHub > Releases**，编辑草稿 Release，点击 **Generate release notes**，检查内容后发布。
@@ -260,6 +262,8 @@ git push origin v1.2.5
 
 点击 **New Folder** 创建分类目录，然后在目录里新建草图。面包屑导航可以回到上级目录。如果从子目录打开草图，再返回图库，会继续停留在原来的子目录。草图卡片上的 **Move** 可以把草图移动到其他文件夹。
 
+分类文件夹在图库里也有自己的笔记区域。文件夹笔记会保存到该目录下的 `.folder.json`。如果一个文件夹里只有 `.folder.json`，删除时仍会按空文件夹处理。
+
 ### 使用图片
 
 把图片文件放到草图文件夹或共享的 `public` 文件夹，然后使用普通 p5 代码：
@@ -276,7 +280,14 @@ function preload() {
 
 ### 备份草图
 
-使用 **Export ZIP** 备份所有草图文件夹，包括代码、笔记、缩略图和资源文件。使用 **Import ZIP** 可以恢复备份。
+使用 **Export ZIP** 备份所有草图文件夹，包括代码、草图笔记、文件夹笔记、缩略图、第三方库和资源文件。使用 **Import ZIP** 可以恢复备份。
+
+ZIP 导入采用“合并并覆盖”策略：
+
+- ZIP 中有、本地没有的文件和文件夹会直接新增。
+- ZIP 和本地同路径都存在的文件会无提示覆盖。
+- 本地有但 ZIP 中没有的文件会保留；导入不会删除本地多余文件。
+- `meta.json`、`.folder.json`、缩略图、第三方库和资源文件都遵循同样规则。
 
 ### 调试草图
 
