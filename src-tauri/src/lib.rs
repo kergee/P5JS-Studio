@@ -186,6 +186,7 @@ fn asset_mime_type(path: &PathBuf) -> &'static str {
         "mp4" => "video/mp4",
         "webm" => "video/webm",
         "mov" => "video/quicktime",
+        "wasm" => "application/wasm",
         "bin" => "application/octet-stream",
         _ => "application/octet-stream",
     }

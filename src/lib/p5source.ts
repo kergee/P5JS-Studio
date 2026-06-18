@@ -185,6 +185,8 @@ export function buildSrcdoc(
     (function() {
       function resolveAssetPath(path) {
         if (typeof path !== 'string') return null;
+        var aliased = aliasRemoteAssetPath(path);
+        if (aliased) return aliased;
         if (/^(data:|blob:|https?:)/i.test(path)) return null;
 
         var cleaned = normalizeAssetPath(path);
@@ -192,6 +194,19 @@ export function buildSrcdoc(
           || window.__p5studioAssets[cleaned]
           || window.__p5studioAssets['/' + cleaned]
           || null;
+      }
+
+      function aliasRemoteAssetPath(path) {
+        var aliases = {
+          'https://storage.googleapis.com/tfjs-models/tfjs/sentiment_cnn_v1/': 'libraries/ml5-models/sentiment_cnn_v1/'
+        };
+        for (var prefix in aliases) {
+          if (String(path).indexOf(prefix) === 0) {
+            var localPath = normalizeAssetPath(aliases[prefix] + String(path).slice(prefix.length));
+            return window.__p5studioAssets[localPath] || window.__p5studioAssets['/' + localPath] || null;
+          }
+        }
+        return null;
       }
 
       function normalizeAssetPath(path) {
@@ -221,6 +236,9 @@ export function buildSrcdoc(
         if (/^[a-z][a-z0-9+.-]*:/i.test(value)) {
           try {
             var parsed = new URL(value);
+            if (parsed.protocol === 'about:') {
+              return normalizeAssetPath(parsed.pathname.replace(/^srcdoc\/?/, ''));
+            }
             if (parsed.origin !== window.location.origin) return null;
             value = parsed.pathname;
           } catch (error) {
@@ -266,6 +284,41 @@ export function buildSrcdoc(
             return Promise.resolve(responseFromDataUrl(dataUrl, method));
           }
           return originalFetch(input, init);
+        };
+      }
+
+      function installAssetScriptInterceptor() {
+        if (typeof HTMLScriptElement === 'undefined') return;
+        var originalSetAttribute = HTMLScriptElement.prototype.setAttribute;
+        HTMLScriptElement.prototype.setAttribute = function(name, value) {
+          var args = Array.prototype.slice.call(arguments);
+          if (String(name).toLowerCase() === 'src') {
+            args[1] = resolveAssetPath(value) || value;
+          }
+          return originalSetAttribute.apply(this, args);
+        };
+
+        var srcDescriptor = Object.getOwnPropertyDescriptor(HTMLScriptElement.prototype, 'src')
+          || Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'src');
+        if (srcDescriptor && srcDescriptor.set && srcDescriptor.get && srcDescriptor.configurable) {
+          Object.defineProperty(HTMLScriptElement.prototype, 'src', {
+            configurable: true,
+            enumerable: srcDescriptor.enumerable,
+            get: srcDescriptor.get,
+            set: function(value) {
+              srcDescriptor.set.call(this, resolveAssetPath(value) || value);
+            }
+          });
+        }
+      }
+
+      function installAssetXhrInterceptor() {
+        if (typeof XMLHttpRequest === 'undefined') return;
+        var originalOpen = XMLHttpRequest.prototype.open;
+        XMLHttpRequest.prototype.open = function(method, url) {
+          var args = Array.prototype.slice.call(arguments);
+          args[1] = resolveAssetPath(url) || url;
+          return originalOpen.apply(this, args);
         };
       }
 
@@ -352,6 +405,8 @@ export function buildSrcdoc(
       }
 
       installAssetFetchInterceptor();
+      installAssetScriptInterceptor();
+      installAssetXhrInterceptor();
 
       var singlePathLoaders = [
         'loadFont',
