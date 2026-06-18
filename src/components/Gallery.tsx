@@ -65,6 +65,7 @@ export default function Gallery({
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [folderNotes, setFolderNotes] = useState("");
   const [folderNotesLoadedPath, setFolderNotesLoadedPath] = useState<string | null>(null);
+  const [showFolderNotes, setShowFolderNotes] = useState(false);
   const light = isLightTheme(theme);
   const t = text[language];
   const subtleButtonClass = light
@@ -234,6 +235,35 @@ export default function Gallery({
 
   const breadcrumbParts = currentPath.split("/").filter(Boolean);
   const hasItems = listing.folders.length > 0 || listing.sketches.length > 0;
+  const folderNotesPanel = (
+    <section className={hasItems ? "mb-5" : "mb-10"}>
+      <button
+        onClick={() => setShowFolderNotes((value) => !value)}
+        className={`mb-2 text-sm px-3 py-1.5 rounded transition-colors ${
+          showFolderNotes
+            ? light
+              ? "bg-gray-200 text-gray-950"
+              : "bg-gray-600 text-white"
+            : subtleButtonClass
+        }`}
+      >
+        {folderNotes ? `📝 ${t.folderNotes}` : t.folderNotes}
+      </button>
+      {showFolderNotes && (
+        <textarea
+          value={folderNotes}
+          onChange={(event) => setFolderNotes(event.target.value)}
+          placeholder={t.addFolderNotesPlaceholder}
+          rows={3}
+          className={`w-full resize-y rounded border px-3 py-2 text-sm outline-none transition-colors ${
+            light
+              ? "border-gray-200 bg-white text-gray-900 placeholder:text-gray-400 focus:border-blue-400"
+              : "border-gray-700 bg-gray-800 text-gray-100 placeholder:text-gray-500 focus:border-blue-500"
+          }`}
+        />
+      )}
+    </section>
+  );
 
   return (
     <div className={`flex flex-col h-screen ${light ? "bg-gray-50" : "bg-gray-900"}`}>
@@ -373,24 +403,7 @@ export default function Gallery({
 
       {hasItems ? (
         <div className="flex-1 overflow-auto p-6">
-          <section className="mb-5">
-            <label
-              className={`mb-2 block text-xs font-medium ${light ? "text-gray-600" : "text-gray-400"}`}
-            >
-              {t.folderNotes}
-            </label>
-            <textarea
-              value={folderNotes}
-              onChange={(event) => setFolderNotes(event.target.value)}
-              placeholder={t.addFolderNotesPlaceholder}
-              rows={3}
-              className={`w-full resize-y rounded border px-3 py-2 text-sm outline-none transition-colors ${
-                light
-                  ? "border-gray-200 bg-white text-gray-900 placeholder:text-gray-400 focus:border-blue-400"
-                  : "border-gray-700 bg-gray-800 text-gray-100 placeholder:text-gray-500 focus:border-blue-500"
-              }`}
-            />
-          </section>
+          {folderNotesPanel}
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5 gap-4">
             {listing.folders.map((name) => (
               <div
@@ -462,24 +475,7 @@ export default function Gallery({
         </div>
       ) : (
         <div className="flex-1 overflow-auto p-6">
-          <section className="mb-10">
-            <label
-              className={`mb-2 block text-xs font-medium ${light ? "text-gray-600" : "text-gray-400"}`}
-            >
-              {t.folderNotes}
-            </label>
-            <textarea
-              value={folderNotes}
-              onChange={(event) => setFolderNotes(event.target.value)}
-              placeholder={t.addFolderNotesPlaceholder}
-              rows={3}
-              className={`w-full resize-y rounded border px-3 py-2 text-sm outline-none transition-colors ${
-                light
-                  ? "border-gray-200 bg-white text-gray-900 placeholder:text-gray-400 focus:border-blue-400"
-                  : "border-gray-700 bg-gray-800 text-gray-100 placeholder:text-gray-500 focus:border-blue-500"
-              }`}
-            />
-          </section>
+          {folderNotesPanel}
           <div className={`flex min-h-80 items-center justify-center ${light ? "text-gray-500" : "text-gray-500"}`}>
             <div className="text-center">
               <div className="text-6xl mb-4 opacity-30">{"{ }"}</div>
