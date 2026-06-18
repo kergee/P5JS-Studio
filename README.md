@@ -285,8 +285,8 @@ You can trigger it in two ways:
 2. Push a version tag:
 
 ```bash
-git tag v1.2.8
-git push origin v1.2.8
+git tag v1.2.9
+git push origin v1.2.9
 ```
 
 Tag pushes matching `v*` create a draft GitHub release through `tauri-apps/tauri-action`.
@@ -298,8 +298,8 @@ The current workflow creates a draft GitHub Release with a fixed download sectio
 A practical release flow is:
 
 ```bash
-git tag v1.2.8
-git push origin v1.2.8
+git tag v1.2.9
+git push origin v1.2.9
 ```
 
 Then open **GitHub > Releases**, edit the draft release, click **Generate release notes**, review the generated text, and publish the release.
