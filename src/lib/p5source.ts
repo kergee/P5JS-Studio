@@ -237,7 +237,14 @@ export function buildSrcdoc(
           try {
             var parsed = new URL(value);
             if (parsed.protocol === 'about:') {
-              return normalizeAssetPath(parsed.pathname.replace(/^srcdoc\/?/, ''));
+              var pathname = parsed.pathname;
+              if (pathname.indexOf('srcdoc/') === 0) {
+                return normalizeAssetPath(pathname.slice(7));
+              }
+              if (pathname === 'srcdoc') {
+                return '';
+              }
+              return normalizeAssetPath(pathname);
             }
             if (parsed.origin !== window.location.origin) return null;
             value = parsed.pathname;
