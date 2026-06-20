@@ -199,7 +199,25 @@ fn should_skip_asset(path: &PathBuf) -> bool {
     file_name == "meta.json" || file_name == ".folder.json" || file_name == "thumbnail.png"
 }
 
-fn collect_sketch_assets(dir: &PathBuf, prefix: &str, assets: &mut HashMap<String, String>) {
+fn collect_asset_file(path: &PathBuf, rel_path: &str, assets: &mut HashMap<String, String>) {
+    if should_skip_asset(path) {
+        return;
+    }
+    let mime = asset_mime_type(path);
+    let Ok(bytes) = fs::read(path) else {
+        return;
+    };
+
+    let data_url = format!("data:{};base64,{}", mime, STANDARD.encode(&bytes));
+    assets.insert(rel_path.to_string(), data_url);
+}
+
+fn collect_sketch_assets(
+    dir: &PathBuf,
+    prefix: &str,
+    assets: &mut HashMap<String, String>,
+    skip_top_level_libraries: bool,
+) {
     let entries = match fs::read_dir(dir) {
         Ok(entries) => entries,
         Err(_) => return,
@@ -208,6 +226,9 @@ fn collect_sketch_assets(dir: &PathBuf, prefix: &str, assets: &mut HashMap<Strin
     for entry in entries.filter_map(|e| e.ok()) {
         let path = entry.path();
         let name = entry.file_name().to_string_lossy().to_string();
+        if path.is_dir() && skip_top_level_libraries && prefix.is_empty() && name == "libraries" {
+            continue;
+        }
         let rel_path = if prefix.is_empty() {
             name
         } else {
@@ -215,21 +236,50 @@ fn collect_sketch_assets(dir: &PathBuf, prefix: &str, assets: &mut HashMap<Strin
         };
 
         if path.is_dir() {
-            collect_sketch_assets(&path, &rel_path, assets);
+            collect_sketch_assets(&path, &rel_path, assets, false);
             continue;
         }
 
-        if should_skip_asset(&path) {
+        collect_asset_file(&path, &rel_path, assets);
+    }
+}
+
+fn collect_declared_public_libraries(
+    public_dir: &PathBuf,
+    libraries: &[String],
+    assets: &mut HashMap<String, String>,
+) {
+    let mut uses_ml5 = false;
+
+    for library in libraries {
+        if library.starts_with("data:")
+            || library.starts_with("http://")
+            || library.starts_with("https://")
+        {
             continue;
         }
-        let mime = asset_mime_type(&path);
-        let Ok(bytes) = fs::read(&path) else {
+        let Ok(rel_path) = normalize_rel_path(library.trim_start_matches("./")) else {
             continue;
         };
+        let Ok(path) = relative_dir(public_dir, &rel_path) else {
+            continue;
+        };
+        if path.is_file() {
+            collect_asset_file(&path, &rel_path, assets);
+        }
 
-        let data_url = format!("data:{};base64,{}", mime, STANDARD.encode(&bytes));
-        assets.insert(rel_path.clone(), data_url.clone());
-        assets.insert(format!("/{}", rel_path), data_url);
+        let file_name = path
+            .file_name()
+            .map(|name| name.to_string_lossy().to_lowercase())
+            .unwrap_or_default();
+        uses_ml5 |= file_name == "ml5.js" || file_name == "ml5.min.js";
+    }
+
+    if uses_ml5 {
+        for dependency in ["ml5-models", "mediapipe"] {
+            let rel_path = format!("libraries/{}", dependency);
+            collect_sketch_assets(&public_dir.join(&rel_path), &rel_path, assets, false);
+        }
     }
 }
 
@@ -427,12 +477,20 @@ fn get_thumbnail(app: AppHandle, name: String) -> Option<String> {
 fn get_sketch_assets(app: AppHandle, name: String) -> HashMap<String, String> {
     let base = sketches_dir(&app);
     let mut assets = HashMap::new();
+    let sketch = sketch_dir(&app, &name).ok();
+    let libraries = sketch
+        .as_ref()
+        .map(read_meta)
+        .map(|meta| meta.libraries)
+        .unwrap_or_default();
 
     // Global resources can live in sketches/public.
-    collect_sketch_assets(&base.join("public"), "", &mut assets);
+    let public_dir = base.join("public");
+    collect_sketch_assets(&public_dir, "", &mut assets, true);
+    collect_declared_public_libraries(&public_dir, &libraries, &mut assets);
     // Sketch-local resources live beside sketch.js and override global names.
-    if let Ok(dir) = sketch_dir(&app, &name) {
-        collect_sketch_assets(&dir, "", &mut assets);
+    if let Some(dir) = sketch {
+        collect_sketch_assets(&dir, "", &mut assets, false);
     }
 
     assets
@@ -782,6 +840,52 @@ fn import_sketches_zip(app: AppHandle, zip_path: String) -> Result<Vec<String>, 
     let mut result: Vec<String> = imported.into_iter().collect();
     result.sort();
     Ok(result)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    #[test]
+    fn public_libraries_are_only_collected_when_declared() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system clock")
+            .as_nanos();
+        let public_dir = std::env::temp_dir().join(format!(
+            "p5js-studio-assets-{}-{}",
+            std::process::id(),
+            unique
+        ));
+        fs::create_dir_all(public_dir.join("libraries/ml5-models")).expect("model directory");
+        fs::create_dir_all(public_dir.join("libraries/mediapipe")).expect("mediapipe directory");
+        fs::write(public_dir.join("background.png"), b"image").expect("public image");
+        fs::write(public_dir.join("libraries/ml5.min.js"), b"ml5").expect("ml5 script");
+        fs::write(public_dir.join("libraries/ml5-models/model.json"), b"{}").expect("model");
+        fs::write(public_dir.join("libraries/mediapipe/face.js"), b"face").expect("mediapipe");
+
+        let mut ordinary_assets = HashMap::new();
+        collect_sketch_assets(&public_dir, "", &mut ordinary_assets, true);
+        collect_declared_public_libraries(&public_dir, &[], &mut ordinary_assets);
+        assert!(ordinary_assets.contains_key("background.png"));
+        assert!(!ordinary_assets.contains_key("/background.png"));
+        assert!(!ordinary_assets.contains_key("libraries/ml5.min.js"));
+        assert!(!ordinary_assets.contains_key("libraries/ml5-models/model.json"));
+
+        let mut ml5_assets = HashMap::new();
+        collect_sketch_assets(&public_dir, "", &mut ml5_assets, true);
+        collect_declared_public_libraries(
+            &public_dir,
+            &["libraries/ml5.min.js".to_string()],
+            &mut ml5_assets,
+        );
+        assert!(ml5_assets.contains_key("libraries/ml5.min.js"));
+        assert!(ml5_assets.contains_key("libraries/ml5-models/model.json"));
+        assert!(ml5_assets.contains_key("libraries/mediapipe/face.js"));
+
+        fs::remove_dir_all(public_dir).expect("remove test directory");
+    }
 }
 
 // ── App entry ─────────────────────────────────────────────────────────────────

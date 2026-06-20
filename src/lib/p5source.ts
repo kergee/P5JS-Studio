@@ -18,7 +18,7 @@ function escapeAttribute(value: string) {
 
 function resolveAssetDataUrl(path: string, assets: SketchAssets) {
   if (/^(data:|blob:|https?:)/i.test(path)) return path;
-  const cleaned = path.split("#")[0].split("?")[0].replace(/^\.\//, "");
+  const cleaned = path.split("#")[0].split("?")[0].replace(/^\.\//, "").replace(/^\/+/, "");
   return assets[path] || assets[cleaned] || assets[`/${cleaned}`] || null;
 }
 
