@@ -258,13 +258,8 @@ export default function Editor({ initialName, onBack, theme, onToggleTheme, lang
       return;
     }
 
-    try {
-      setAssets(await tauriApi.getSketchAssets(name));
-    } catch {
-      setAssets({});
-    }
     setRunTrigger((t) => t + 1);
-  }, [combinedCode, name, save]);
+  }, [combinedCode, save]);
 
   const handleThumbnail = useCallback((dataUrl: string) => {
     pendingThumbnail.current = dataUrl;
