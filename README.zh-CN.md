@@ -289,11 +289,11 @@ git tag v1.2.9
 git push origin v1.2.9
 ```
 
-推送匹配 `v*` 的 tag 后，会通过 `tauri-apps/tauri-action` 创建一个草稿版 GitHub Release。
+推送匹配 `v*` 的 tag 后，会通过 `tauri-apps/tauri-action` 创建一个 GitHub Release。
 
 ### Release Notes 和变更日志
 
-当前 workflow 会创建一个带下载说明的草稿版 GitHub Release。Action 构建完成后，可以进入 GitHub 的 Releases 页面编辑草稿 Release，然后点击 **Generate release notes**，让 GitHub 根据合并记录和提交记录自动生成一版变更说明。
+当前 workflow 会创建一个带下载说明的 GitHub Release。Action 构建完成后，可以进入 GitHub 的 Releases 页面编辑 Release，然后点击 **Generate release notes**，让 GitHub 根据合并记录和提交记录自动生成一版变更说明。
 
 一个实用发布流程是：
 
