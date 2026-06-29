@@ -289,11 +289,11 @@ git tag v1.2.9
 git push origin v1.2.9
 ```
 
-Tag pushes matching `v*` create a draft GitHub release through `tauri-apps/tauri-action`.
+Tag pushes matching `v*` create a GitHub Release through `tauri-apps/tauri-action`.
 
 ### Release Notes and Changelog
 
-The current workflow creates a draft GitHub Release with a fixed download section. After the build finishes, you can edit the draft release on GitHub and click **Generate release notes** to let GitHub create a changelog from merged commits and pull requests.
+The current workflow creates a GitHub Release with a fixed download section. After the build finishes, you can edit the release on GitHub and click **Generate release notes** to let GitHub create a changelog from merged commits and pull requests.
 
 A practical release flow is:
 
