@@ -61,6 +61,7 @@ export default function Gallery({
   const [moveTargets, setMoveTargets] = useState<string[]>([]);
   const [movingSketch, setMovingSketch] = useState<string | null>(null);
   const [moveDestination, setMoveDestination] = useState("");
+  const [moveError, setMoveError] = useState<string | null>(null);
   const [pendingDelete, setPendingDelete] = useState<PendingDelete>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [folderNotes, setFolderNotes] = useState("");
@@ -223,18 +224,30 @@ export default function Gallery({
     const folders = await tauriApi.listFolders();
     setMoveTargets(folders);
     setMoveDestination(parentPath(sketchPath));
+    setMoveError(null);
     setMovingSketch(sketchPath);
   };
 
   const confirmMove = async () => {
     if (!movingSketch) return;
-    await tauriApi.moveSketch(movingSketch, moveDestination);
-    setMovingSketch(null);
-    refresh();
+    try {
+      await tauriApi.moveSketch(movingSketch, moveDestination);
+      setMovingSketch(null);
+      setMoveError(null);
+      if (moveDestination !== currentPath) {
+        onPathChange(moveDestination);
+        return;
+      }
+      refresh();
+    } catch (error) {
+      setMoveError(error instanceof Error ? error.message : String(error));
+    }
   };
 
   const breadcrumbParts = currentPath.split("/").filter(Boolean);
   const hasItems = listing.folders.length > 0 || listing.sketches.length > 0;
+  const moveSourceFolder = movingSketch ? parentPath(movingSketch) : "";
+  const moveUnchanged = Boolean(movingSketch) && moveDestination === moveSourceFolder;
   const folderNotesPanel = (
     <section className={hasItems ? "mb-5" : "mb-10"}>
       <button
@@ -328,6 +341,9 @@ export default function Gallery({
             </button>
             <span className={`px-1.5 py-0.5 ${light ? "text-gray-400" : "text-gray-500"}`}>
               v{APP_VERSION}
+            </span>
+            <span className={`px-1.5 py-0.5 ${light ? "text-gray-500" : "text-gray-400"}`}>
+              {t.currentProjectCount(String(listing.sketches.length))}
             </span>
           </div>
           <div className="flex items-center gap-1 mt-1 text-xs">
@@ -501,7 +517,10 @@ export default function Gallery({
             </h2>
             <select
               value={moveDestination}
-              onChange={(e) => setMoveDestination(e.target.value)}
+              onChange={(e) => {
+                setMoveDestination(e.target.value);
+                setMoveError(null);
+              }}
               className={`mt-4 w-full rounded border px-3 py-2 text-sm outline-none ${
                 light ? "bg-white border-gray-300 text-gray-900" : "bg-gray-700 border-gray-600 text-white"
               }`}
@@ -512,6 +531,11 @@ export default function Gallery({
                 </option>
               ))}
             </select>
+            {moveError && (
+              <p className={`mt-2 text-xs ${light ? "text-red-600" : "text-red-400"}`}>
+                {t.moveFailed}: {moveError}
+              </p>
+            )}
             <div className="mt-4 flex justify-end gap-2">
               <button
                 onClick={() => setMovingSketch(null)}
@@ -521,7 +545,12 @@ export default function Gallery({
               </button>
               <button
                 onClick={confirmMove}
-                className="bg-blue-600 hover:bg-blue-500 text-white px-3 py-1.5 rounded text-sm transition-colors"
+                disabled={moveUnchanged}
+                className={`px-3 py-1.5 rounded text-sm transition-colors ${
+                  moveUnchanged
+                    ? "bg-gray-400 text-white cursor-not-allowed"
+                    : "bg-blue-600 hover:bg-blue-500 text-white"
+                }`}
               >
                 {t.move}
               </button>
