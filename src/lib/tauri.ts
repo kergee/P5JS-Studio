@@ -12,9 +12,9 @@ export interface SketchData {
   thumbnail: string | null;
 }
 
-export interface SketchSummary {
+export interface SketchOverview {
   notes: string;
-  has_thumbnail: boolean;
+  thumbnail: string | null;
 }
 
 export interface DirectoryListing {
@@ -29,8 +29,8 @@ export const tauriApi = {
   listDirectory: (path: string) => invoke<DirectoryListing>("list_directory", { path }),
   listFolders: () => invoke<string[]>("list_folders"),
   getSketch: (name: string) => invoke<SketchData>("get_sketch", { name }),
-  getSketchSummary: (name: string) => invoke<SketchSummary>("get_sketch_summary", { name }),
-  getThumbnail: (name: string) => invoke<string | null>("get_thumbnail", { name }),
+  getDirectoryOverview: (path: string) =>
+    invoke<Record<string, SketchOverview>>("get_directory_overview", { path }),
   getSketchAssets: (name: string) => invoke<SketchAssets>("get_sketch_assets", { name }),
 
   createSketch: (name: string) => invoke<void>("create_sketch", { name }),
@@ -41,6 +41,8 @@ export const tauriApi = {
   deleteFolder: (path: string) => invoke<void>("delete_folder", { path }),
   moveSketch: (sketchPath: string, destFolder: string) =>
     invoke<string>("move_sketch", { sketchPath, destFolder }),
+  duplicateSketch: (sketchPath: string) =>
+    invoke<string>("duplicate_sketch", { sketchPath }),
   saveSketchFile: (sketchName: string, fileName: string, code: string) =>
     invoke<void>("save_sketch_file", { sketchName, fileName, code }),
   addSketchFile: (sketchName: string, fileName: string) =>

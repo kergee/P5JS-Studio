@@ -39,9 +39,9 @@ struct SketchData {
 }
 
 #[derive(Serialize)]
-struct SketchSummary {
+struct SketchOverview {
     notes: String,
-    has_thumbnail: bool,
+    thumbnail: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -244,13 +244,50 @@ fn collect_sketch_assets(
     }
 }
 
+/// Scans sketch source code for references to specific ml5-models/mediapipe
+/// model folders (either an explicit `libraries/<category>/<model-name>/...`
+/// path literal, or an `ml5.sentiment(...)` call, which relies on the
+/// implicit sentiment_cnn_v1 redirect in p5source.ts) so only the models a
+/// sketch actually uses get inlined, instead of every model ever downloaded.
+fn extract_ml5_model_dependencies(code: &str) -> Vec<String> {
+    let mut deps: Vec<String> = Vec::new();
+
+    for category in ["ml5-models", "mediapipe"] {
+        let prefix = format!("libraries/{}/", category);
+        let mut search_from = 0;
+        while let Some(found) = code[search_from..].find(&prefix) {
+            let start = search_from + found + prefix.len();
+            let rest = &code[start..];
+            let end = rest
+                .find(|c: char| c == '"' || c == '\'' || c == '`' || c == '/' || c.is_whitespace())
+                .unwrap_or(rest.len());
+            let name = &rest[..end];
+            if !name.is_empty() {
+                let rel_path = format!("libraries/{}/{}", category, name);
+                if !deps.contains(&rel_path) {
+                    deps.push(rel_path);
+                }
+            }
+            search_from = start;
+        }
+    }
+
+    if code.contains(".sentiment(") {
+        let rel_path = "libraries/ml5-models/sentiment_cnn_v1".to_string();
+        if !deps.contains(&rel_path) {
+            deps.push(rel_path);
+        }
+    }
+
+    deps
+}
+
 fn collect_declared_public_libraries(
     public_dir: &PathBuf,
     libraries: &[String],
+    code: &str,
     assets: &mut HashMap<String, String>,
 ) {
-    let mut uses_ml5 = false;
-
     for library in libraries {
         if library.starts_with("data:")
             || library.starts_with("http://")
@@ -267,19 +304,13 @@ fn collect_declared_public_libraries(
         if path.is_file() {
             collect_asset_file(&path, &rel_path, assets);
         }
-
-        let file_name = path
-            .file_name()
-            .map(|name| name.to_string_lossy().to_lowercase())
-            .unwrap_or_default();
-        uses_ml5 |= file_name == "ml5.js" || file_name == "ml5.min.js";
     }
 
-    if uses_ml5 {
-        for dependency in ["ml5-models", "mediapipe"] {
-            let rel_path = format!("libraries/{}", dependency);
-            collect_sketch_assets(&public_dir.join(&rel_path), &rel_path, assets, false);
-        }
+    for rel_path in extract_ml5_model_dependencies(code) {
+        let Ok(dir) = relative_dir(public_dir, &rel_path) else {
+            continue;
+        };
+        collect_sketch_assets(&dir, &rel_path, assets, false);
     }
 }
 
@@ -419,25 +450,35 @@ fn list_folders(app: AppHandle) -> Vec<String> {
     folders
 }
 
+fn sketch_file_names(dir: &PathBuf, meta: &SketchMeta) -> Vec<String> {
+    if !meta.files.is_empty() {
+        return meta.files.clone();
+    }
+    let mut v: Vec<String> = fs::read_dir(dir)
+        .map(|e| {
+            e.filter_map(|f| f.ok())
+                .filter(|f| f.path().extension().map_or(false, |x| x == "js"))
+                .filter_map(|f| f.file_name().into_string().ok())
+                .collect()
+        })
+        .unwrap_or_default();
+    v.sort();
+    v
+}
+
+fn read_sketch_code(dir: &PathBuf, meta: &SketchMeta) -> String {
+    sketch_file_names(dir, meta)
+        .iter()
+        .filter_map(|fname| fs::read_to_string(dir.join(fname)).ok())
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 #[tauri::command]
 fn get_sketch(app: AppHandle, name: String) -> Result<SketchData, String> {
     let dir = sketch_dir(&app, &name)?;
     let meta = read_meta(&dir);
-
-    let file_names: Vec<String> = if !meta.files.is_empty() {
-        meta.files.clone()
-    } else {
-        let mut v: Vec<String> = fs::read_dir(&dir)
-            .map(|e| {
-                e.filter_map(|f| f.ok())
-                    .filter(|f| f.path().extension().map_or(false, |x| x == "js"))
-                    .filter_map(|f| f.file_name().into_string().ok())
-                    .collect()
-            })
-            .unwrap_or_default();
-        v.sort();
-        v
-    };
+    let file_names = sketch_file_names(&dir, &meta);
 
     let files: Vec<SketchFile> = file_names
         .iter()
@@ -456,21 +497,34 @@ fn get_sketch(app: AppHandle, name: String) -> Result<SketchData, String> {
 }
 
 #[tauri::command]
-fn get_sketch_summary(app: AppHandle, name: String) -> SketchSummary {
-    let dir = match sketch_dir(&app, &name) {
-        Ok(dir) => dir,
-        Err(_) => return SketchSummary { notes: String::new(), has_thumbnail: false },
-    };
-    let meta = read_meta(&dir);
-    SketchSummary {
-        notes: meta.notes,
-        has_thumbnail: dir.join("thumbnail.png").exists(),
+fn get_directory_overview(app: AppHandle, path: String) -> Result<HashMap<String, SketchOverview>, String> {
+    let base = sketches_dir(&app);
+    let normalized = normalize_rel_path(&path)?;
+    let dir = relative_dir(&base, &normalized)?;
+    if is_sketch_dir(&dir) {
+        return Err("cannot browse inside a sketch".to_string());
     }
-}
 
-#[tauri::command]
-fn get_thumbnail(app: AppHandle, name: String) -> Option<String> {
-    thumbnail_data_url(&sketch_dir(&app, &name).ok()?)
+    let mut overview = HashMap::new();
+    for entry in fs::read_dir(&dir).map_err(|e| e.to_string())?.filter_map(|e| e.ok()) {
+        let entry_path = entry.path();
+        if !entry_path.is_dir() {
+            continue;
+        }
+        let name = entry.file_name().to_string_lossy().to_string();
+        if is_public_root(&name, &normalized) || !is_sketch_dir(&entry_path) {
+            continue;
+        }
+        let meta = read_meta(&entry_path);
+        overview.insert(
+            name,
+            SketchOverview {
+                notes: meta.notes,
+                thumbnail: thumbnail_data_url(&entry_path),
+            },
+        );
+    }
+    Ok(overview)
 }
 
 #[tauri::command]
@@ -478,16 +532,16 @@ fn get_sketch_assets(app: AppHandle, name: String) -> HashMap<String, String> {
     let base = sketches_dir(&app);
     let mut assets = HashMap::new();
     let sketch = sketch_dir(&app, &name).ok();
-    let libraries = sketch
+    let meta = sketch.as_ref().map(read_meta).unwrap_or_default();
+    let code = sketch
         .as_ref()
-        .map(read_meta)
-        .map(|meta| meta.libraries)
+        .map(|dir| read_sketch_code(dir, &meta))
         .unwrap_or_default();
 
     // Global resources can live in sketches/public.
     let public_dir = base.join("public");
     collect_sketch_assets(&public_dir, "", &mut assets, true);
-    collect_declared_public_libraries(&public_dir, &libraries, &mut assets);
+    collect_declared_public_libraries(&public_dir, &meta.libraries, &code, &mut assets);
     // Sketch-local resources live beside sketch.js and override global names.
     if let Some(dir) = sketch {
         collect_sketch_assets(&dir, "", &mut assets, false);
@@ -734,6 +788,51 @@ fn move_sketch(app: AppHandle, sketch_path: String, dest_folder: String) -> Resu
     Ok(target_rel)
 }
 
+fn copy_dir_recursive(src: &PathBuf, dest: &PathBuf) -> Result<(), String> {
+    fs::create_dir_all(dest).map_err(|e| e.to_string())?;
+    for entry in fs::read_dir(src).map_err(|e| e.to_string())? {
+        let entry = entry.map_err(|e| e.to_string())?;
+        let path = entry.path();
+        let dest_path = dest.join(entry.file_name());
+        if path.is_dir() {
+            copy_dir_recursive(&path, &dest_path)?;
+        } else {
+            fs::copy(&path, &dest_path).map_err(|e| e.to_string())?;
+        }
+    }
+    Ok(())
+}
+
+#[tauri::command]
+fn duplicate_sketch(app: AppHandle, sketch_path: String) -> Result<String, String> {
+    let base = sketches_dir(&app);
+    let source_rel = normalize_rel_path(&sketch_path)?;
+    if source_rel.is_empty() {
+        return Err("invalid sketch path".to_string());
+    }
+    let source_dir = relative_dir(&base, &source_rel)?;
+    if !is_sketch_dir(&source_dir) {
+        return Err("not a sketch".to_string());
+    }
+
+    let mut parts: Vec<&str> = source_rel.split('/').collect();
+    let original_name = parts.pop().ok_or("invalid sketch path")?.to_string();
+    let parent = parts.join("/");
+
+    let mut candidate_name = format!("{} copy", original_name);
+    let mut suffix = 2;
+    loop {
+        let candidate_rel = join_rel_path(&parent, &candidate_name)?;
+        let candidate_dir = relative_dir(&base, &candidate_rel)?;
+        if !candidate_dir.exists() {
+            copy_dir_recursive(&source_dir, &candidate_dir)?;
+            return Ok(candidate_rel);
+        }
+        candidate_name = format!("{} copy {}", original_name, suffix);
+        suffix += 1;
+    }
+}
+
 #[tauri::command]
 fn open_sketches_dir(app: AppHandle) -> Result<(), String> {
     let dir = sketches_dir(&app);
@@ -858,31 +957,63 @@ mod tests {
             std::process::id(),
             unique
         ));
-        fs::create_dir_all(public_dir.join("libraries/ml5-models")).expect("model directory");
-        fs::create_dir_all(public_dir.join("libraries/mediapipe")).expect("mediapipe directory");
+        fs::create_dir_all(public_dir.join("libraries/ml5-models/ar_portrait_depth"))
+            .expect("depth model directory");
+        fs::create_dir_all(public_dir.join("libraries/ml5-models/sentiment_cnn_v1"))
+            .expect("sentiment model directory");
+        fs::create_dir_all(public_dir.join("libraries/mediapipe/face_mesh"))
+            .expect("mediapipe directory");
         fs::write(public_dir.join("background.png"), b"image").expect("public image");
         fs::write(public_dir.join("libraries/ml5.min.js"), b"ml5").expect("ml5 script");
-        fs::write(public_dir.join("libraries/ml5-models/model.json"), b"{}").expect("model");
-        fs::write(public_dir.join("libraries/mediapipe/face.js"), b"face").expect("mediapipe");
+        fs::write(
+            public_dir.join("libraries/ml5-models/ar_portrait_depth/model.json"),
+            b"{}",
+        )
+        .expect("depth model");
+        fs::write(
+            public_dir.join("libraries/ml5-models/sentiment_cnn_v1/model.json"),
+            b"{}",
+        )
+        .expect("sentiment model");
+        fs::write(public_dir.join("libraries/mediapipe/face_mesh/face.js"), b"face")
+            .expect("mediapipe");
 
+        // No libraries declared: only ordinary public assets, nothing under libraries/.
         let mut ordinary_assets = HashMap::new();
         collect_sketch_assets(&public_dir, "", &mut ordinary_assets, true);
-        collect_declared_public_libraries(&public_dir, &[], &mut ordinary_assets);
+        collect_declared_public_libraries(&public_dir, &[], "", &mut ordinary_assets);
         assert!(ordinary_assets.contains_key("background.png"));
         assert!(!ordinary_assets.contains_key("/background.png"));
         assert!(!ordinary_assets.contains_key("libraries/ml5.min.js"));
-        assert!(!ordinary_assets.contains_key("libraries/ml5-models/model.json"));
+        assert!(!ordinary_assets.contains_key("libraries/ml5-models/ar_portrait_depth/model.json"));
 
-        let mut ml5_assets = HashMap::new();
-        collect_sketch_assets(&public_dir, "", &mut ml5_assets, true);
+        // ml5 declared, code only references the depth model: only that model folder loads.
+        let mut depth_assets = HashMap::new();
+        let depth_code = r#"depthModelUrl: "libraries/ml5-models/ar_portrait_depth/model.json""#;
+        collect_sketch_assets(&public_dir, "", &mut depth_assets, true);
         collect_declared_public_libraries(
             &public_dir,
             &["libraries/ml5.min.js".to_string()],
-            &mut ml5_assets,
+            depth_code,
+            &mut depth_assets,
         );
-        assert!(ml5_assets.contains_key("libraries/ml5.min.js"));
-        assert!(ml5_assets.contains_key("libraries/ml5-models/model.json"));
-        assert!(ml5_assets.contains_key("libraries/mediapipe/face.js"));
+        assert!(depth_assets.contains_key("libraries/ml5.min.js"));
+        assert!(depth_assets.contains_key("libraries/ml5-models/ar_portrait_depth/model.json"));
+        assert!(!depth_assets.contains_key("libraries/ml5-models/sentiment_cnn_v1/model.json"));
+        assert!(!depth_assets.contains_key("libraries/mediapipe/face_mesh/face.js"));
+
+        // ml5.sentiment(...) has no explicit local path but implicitly needs its model.
+        let mut sentiment_assets = HashMap::new();
+        let sentiment_code = r#"await ml5.sentiment("MovieReviews")"#;
+        collect_sketch_assets(&public_dir, "", &mut sentiment_assets, true);
+        collect_declared_public_libraries(
+            &public_dir,
+            &["libraries/ml5.min.js".to_string()],
+            sentiment_code,
+            &mut sentiment_assets,
+        );
+        assert!(sentiment_assets.contains_key("libraries/ml5-models/sentiment_cnn_v1/model.json"));
+        assert!(!sentiment_assets.contains_key("libraries/ml5-models/ar_portrait_depth/model.json"));
 
         fs::remove_dir_all(public_dir).expect("remove test directory");
     }
@@ -899,14 +1030,14 @@ pub fn run() {
             list_directory,
             list_folders,
             get_sketch,
-            get_sketch_summary,
-            get_thumbnail,
+            get_directory_overview,
             get_sketch_assets,
             create_sketch,
             create_folder,
             rename_folder,
             delete_folder,
             move_sketch,
+            duplicate_sketch,
             save_sketch_file,
             add_sketch_file,
             remove_sketch_file,

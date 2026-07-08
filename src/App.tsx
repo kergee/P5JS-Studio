@@ -1,8 +1,9 @@
-import { useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import Gallery from "./components/Gallery";
-import Editor from "./components/Editor";
-import { Language, LANGUAGE_KEY, readStoredLanguage } from "./lib/language";
-import { ColorTheme, readStoredTheme, THEME_KEY } from "./lib/theme";
+import { Language, LANGUAGE_KEY, readStoredLanguage, text } from "./lib/language";
+import { ColorTheme, isLightTheme, readStoredTheme, THEME_KEY } from "./lib/theme";
+
+const Editor = lazy(() => import("./components/Editor"));
 
 type View = { type: "gallery" } | { type: "editor"; name?: string };
 
@@ -38,13 +39,25 @@ export default function App() {
 
   if (view.type === "editor") {
     return (
-      <Editor
-        initialName={view.name}
-        onBack={openGallery}
-        theme={theme}
-        onToggleTheme={toggleTheme}
-        language={language}
-      />
+      <Suspense
+        fallback={
+          <div
+            className={`flex h-screen w-screen items-center justify-center text-sm ${
+              isLightTheme(theme) ? "bg-gray-50 text-gray-500" : "bg-gray-900 text-gray-400"
+            }`}
+          >
+            {text[language].loadingEditor}
+          </div>
+        }
+      >
+        <Editor
+          initialName={view.name}
+          onBack={openGallery}
+          theme={theme}
+          onToggleTheme={toggleTheme}
+          language={language}
+        />
+      </Suspense>
     );
   }
 
