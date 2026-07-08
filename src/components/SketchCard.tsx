@@ -1,28 +1,32 @@
-import { useEffect, useState } from "react";
 import { Language, text } from "../lib/language";
 import { ColorTheme, isLightTheme } from "../lib/theme";
-import { tauriApi } from "../lib/tauri";
 
 interface SketchCardProps {
   name: string;
   sketchPath: string;
+  notes: string;
+  thumbnail: string | null;
   onOpen: () => void;
   onDelete: () => void;
   onMove: () => void;
+  onDuplicate: () => void;
   theme: ColorTheme;
   language: Language;
 }
 
-export default function SketchCard({ name, sketchPath, onOpen, onDelete, onMove, theme, language }: SketchCardProps) {
-  const [thumbnail, setThumbnail] = useState<string | null>(null);
-  const [notes, setNotes] = useState("");
+export default function SketchCard({
+  name,
+  notes,
+  thumbnail,
+  onOpen,
+  onDelete,
+  onMove,
+  onDuplicate,
+  theme,
+  language,
+}: SketchCardProps) {
   const light = isLightTheme(theme);
   const t = text[language];
-
-  useEffect(() => {
-    tauriApi.getSketchSummary(sketchPath).then((s) => setNotes(s.notes));
-    tauriApi.getThumbnail(sketchPath).then(setThumbnail);
-  }, [sketchPath]);
 
   return (
     <div
@@ -93,6 +97,19 @@ export default function SketchCard({ name, sketchPath, onOpen, onDelete, onMove,
               }`}
             >
               {t.move}
+            </button>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onDuplicate();
+              }}
+              className={`text-xs px-2 py-0.5 rounded transition-colors ${
+                light
+                  ? "text-gray-500 hover:text-gray-900 hover:bg-gray-100"
+                  : "text-gray-400 hover:text-white hover:bg-gray-700"
+              }`}
+            >
+              {t.duplicate}
             </button>
             <button
               onClick={(e) => {

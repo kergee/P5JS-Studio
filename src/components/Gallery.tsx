@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { Language, text } from "../lib/language";
-import { DirectoryListing, tauriApi } from "../lib/tauri";
+import { DirectoryListing, SketchOverview, tauriApi } from "../lib/tauri";
 import { ColorTheme, isLightTheme } from "../lib/theme";
 import { APP_VERSION } from "../lib/version";
 import { useSketchStore } from "../store/useSketchStore";
@@ -54,8 +54,10 @@ export default function Gallery({
   currentPath,
   onPathChange,
 }: GalleryProps) {
-  const { setSketches, addSketch, removeSketch } = useSketchStore();
+  const { sketches, setSketches, addSketch, removeSketch } = useSketchStore();
   const [listing, setListing] = useState<DirectoryListing>(emptyListing);
+  const [overview, setOverview] = useState<Record<string, SketchOverview>>({});
+  const [searchQuery, setSearchQuery] = useState("");
   const [showHelp, setShowHelp] = useState(false);
   const [showLanguageMenu, setShowLanguageMenu] = useState(false);
   const [moveTargets, setMoveTargets] = useState<string[]>([]);
@@ -64,6 +66,7 @@ export default function Gallery({
   const [moveError, setMoveError] = useState<string | null>(null);
   const [pendingDelete, setPendingDelete] = useState<PendingDelete>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [duplicateError, setDuplicateError] = useState<string | null>(null);
   const [folderNotes, setFolderNotes] = useState("");
   const [folderNotesLoadedPath, setFolderNotesLoadedPath] = useState<string | null>(null);
   const [showFolderNotes, setShowFolderNotes] = useState(false);
@@ -74,12 +77,14 @@ export default function Gallery({
     : "text-gray-400 hover:text-white hover:bg-gray-700";
 
   const refresh = useCallback(async () => {
-    const [nextListing, allSketches] = await Promise.all([
+    const [nextListing, allSketches, nextOverview] = await Promise.all([
       tauriApi.listDirectory(currentPath),
       tauriApi.listSketches(),
+      tauriApi.getDirectoryOverview(currentPath),
     ]);
     setListing(nextListing);
     setSketches(allSketches);
+    setOverview(nextOverview);
   }, [currentPath, setSketches]);
 
   useEffect(() => {
@@ -141,6 +146,17 @@ export default function Gallery({
     await tauriApi.deleteSketch(sketchPath);
     removeSketch(sketchPath);
     refresh();
+  };
+
+  const handleDuplicate = async (name: string) => {
+    const sketchPath = joinPath(currentPath, name);
+    try {
+      const duplicatedPath = await tauriApi.duplicateSketch(sketchPath);
+      addSketch(duplicatedPath);
+      refresh();
+    } catch (error) {
+      setDuplicateError(error instanceof Error ? error.message : String(error));
+    }
   };
 
   const handleUploaded = (name: string) => {
@@ -242,6 +258,16 @@ export default function Gallery({
     } catch (error) {
       setMoveError(error instanceof Error ? error.message : String(error));
     }
+  };
+
+  const trimmedSearch = searchQuery.trim().toLowerCase();
+  const searchResults = trimmedSearch
+    ? sketches.filter((path) => path.toLowerCase().includes(trimmedSearch)).slice(0, 20)
+    : [];
+
+  const selectSearchResult = (path: string) => {
+    setSearchQuery("");
+    onOpen(path);
   };
 
   const breadcrumbParts = currentPath.split("/").filter(Boolean);
@@ -371,6 +397,45 @@ export default function Gallery({
         </div>
 
         <div className="flex items-center gap-2">
+          <div className="relative">
+            <input
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Escape") setSearchQuery("");
+              }}
+              onBlur={() => window.setTimeout(() => setSearchQuery(""), 150)}
+              placeholder={t.searchPlaceholder}
+              className={`w-48 rounded border px-3 py-2 text-sm outline-none transition-colors ${
+                light
+                  ? "border-gray-300 bg-white text-gray-900 placeholder:text-gray-400 focus:border-blue-400"
+                  : "border-gray-600 bg-gray-700 text-white placeholder:text-gray-500 focus:border-blue-500"
+              }`}
+            />
+            {searchResults.length > 0 && (
+              <div
+                className={`absolute left-0 top-full z-30 mt-1 max-h-80 w-80 overflow-auto rounded border shadow-lg ${
+                  light ? "bg-white border-gray-200" : "bg-gray-800 border-gray-700"
+                }`}
+              >
+                {searchResults.map((path) => (
+                  <button
+                    key={path}
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      selectSearchResult(path);
+                    }}
+                    className={`block w-full truncate px-3 py-2 text-left text-sm transition-colors ${
+                      light ? "text-gray-700 hover:bg-gray-100" : "text-gray-200 hover:bg-gray-700"
+                    }`}
+                    title={path}
+                  >
+                    {path}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
           <button
             onClick={handleOpenFolder}
             title={t.openFolderTitle}
@@ -479,9 +544,12 @@ export default function Gallery({
                   key={`sketch:${sketchPath}`}
                   name={name}
                   sketchPath={sketchPath}
+                  notes={overview[name]?.notes ?? ""}
+                  thumbnail={overview[name]?.thumbnail ?? null}
                   onOpen={() => onOpen(sketchPath)}
                   onDelete={() => setPendingDelete({ type: "sketch", name })}
                   onMove={() => openMoveDialog(name)}
+                  onDuplicate={() => handleDuplicate(name)}
                   theme={theme}
                   language={language}
                 />
@@ -600,6 +668,27 @@ export default function Gallery({
             <div className="mt-4 flex justify-end">
               <button
                 onClick={() => setDeleteError(null)}
+                className="bg-blue-600 hover:bg-blue-500 text-white px-3 py-1.5 rounded text-sm transition-colors"
+              >
+                OK
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {duplicateError && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 px-4">
+          <div className={`w-full max-w-sm rounded-lg p-4 shadow-xl ${light ? "bg-white" : "bg-gray-800"}`}>
+            <h2 className={`text-sm font-semibold ${light ? "text-gray-950" : "text-white"}`}>
+              {t.duplicateFailed}
+            </h2>
+            <p className={`mt-3 text-sm ${light ? "text-gray-600" : "text-gray-300"}`}>
+              {duplicateError}
+            </p>
+            <div className="mt-4 flex justify-end">
+              <button
+                onClick={() => setDuplicateError(null)}
                 className="bg-blue-600 hover:bg-blue-500 text-white px-3 py-1.5 rounded text-sm transition-colors"
               >
                 OK
