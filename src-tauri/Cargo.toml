@@ -1,6 +1,6 @@
 [package]
 name = "p5js-studio"
-version = "1.2.12"
+version = "1.2.13"
 description = "P5JS Studio - local p5.js sketch editor"
 authors = []
 edition = "2021"

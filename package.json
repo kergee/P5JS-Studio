@@ -1,6 +1,6 @@
 {
   "name": "p5js-studio",
-  "version": "1.2.12",
+  "version": "1.2.13",
   "engines": {
     "node": ">=22"
   },
