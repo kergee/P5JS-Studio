@@ -48,6 +48,7 @@ interface PreviewProps {
   assets?: Record<string, string>;
   libraries?: string[];
   runTrigger: number;
+  p5Version: string;
   onThumbnail?: (dataUrl: string) => void;
   debugMessages: DebugMessage[];
   onDebugMessage?: (message: DebugMessage) => void;
@@ -62,6 +63,7 @@ export default function Preview({
   assets = {},
   libraries = [],
   runTrigger,
+  p5Version,
   onThumbnail,
   debugMessages,
   onDebugMessage,
@@ -96,7 +98,7 @@ export default function Preview({
     if (runTrigger === 0) return;
     onRunStart?.();
     if (iframeRef.current) {
-      iframeRef.current.srcdoc = buildSrcdoc(code, assets, libraries);
+      iframeRef.current.srcdoc = buildSrcdoc(code, assets, libraries, p5Version);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [runTrigger]);

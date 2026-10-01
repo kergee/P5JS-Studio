@@ -1,0 +1,8 @@
+{
+  "files": [
+    "sketch.js"
+  ],
+  "notes": "自制教学示例；GHI 为虚构代号。2.x async setup 加载本地图片与声音，点击画布播放短音。",
+  "libraries": [],
+  "p5Version": "2.3.4"
+}
