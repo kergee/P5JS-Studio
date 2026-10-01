@@ -4,6 +4,12 @@
 
 P5JS Studio 是一个本地桌面版 [p5.js](https://p5js.org) 创意编程 IDE，基于 Tauri、React、TypeScript 和 CodeMirror 构建。它可以离线编写、运行、整理、调试和备份草图，内置图库、文件夹式草图管理、实时预览、多文件草图、笔记、缩略图、本地资源和第三方库、代码格式化、p5 补全提示、调试输出、预览缩放，以及亮色/暗色主题。
 
+## 界面预览
+
+![P5JS Studio 文件夹图库与草图编辑运行界面](docs/images/p5js-studio-gallery-editor.png)
+
+P5JS Studio 的文件夹归档与编辑预览界面。编辑器中展示的演示草图作者为 Juan Carlos Ponce Campuzano，此处用于展示软件运行效果。
+
 ## 功能
 
 ### 图库

@@ -4,6 +4,12 @@
 
 P5JS Studio is a local desktop IDE for [p5.js](https://p5js.org) creative coding, built with Tauri, React, TypeScript, and CodeMirror. It lets you write, run, organize, debug, and back up sketches offline, with a built-in gallery, folder-based sketch management, live preview, multi-file sketches, notes, thumbnails, local assets and libraries, editor formatting, p5-aware autocomplete, debug output, preview zoom, and light/dark themes.
 
+## Screenshot
+
+![P5JS Studio folder gallery and code editor with a running sketch](docs/images/p5js-studio-gallery-editor.png)
+
+Folder-based organization and live sketch preview in P5JS Studio. The demo sketch shown in the editor is by Juan Carlos Ponce Campuzano and is used here to demonstrate the application.
+
 ## Features
 
 ### Gallery
