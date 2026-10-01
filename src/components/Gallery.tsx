@@ -9,6 +9,10 @@ import { useSketchStore } from "../store/useSketchStore";
 import SketchCard from "./SketchCard";
 import ThemeToggle from "./ThemeToggle";
 import UploadButton from "./UploadButton";
+import ProjectImport from "./ProjectImport";
+import WorkflowDialog from "./WorkflowDialog";
+import { workflowText } from "../lib/workflowText";
+import { RUNTIMES, readDefaultVersion, storeDefaultVersion } from "../lib/runtimes";
 
 interface GalleryProps {
   onOpen: (name?: string) => void;
@@ -70,6 +74,13 @@ export default function Gallery({
   const [folderNotes, setFolderNotes] = useState("");
   const [folderNotesLoadedPath, setFolderNotesLoadedPath] = useState<string | null>(null);
   const [showFolderNotes, setShowFolderNotes] = useState(false);
+  const [showProjectImport, setShowProjectImport] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
+  const [defaultVersion, setDefaultVersion] = useState(readDefaultVersion);
+  const [busy, setBusy] = useState(false);
+  const [operationError, setOperationError] = useState("");
+  const [operationMessage, setOperationMessage] = useState("");
+  const w = workflowText(language);
   const light = isLightTheme(theme);
   const t = text[language];
   const subtleButtonClass = light
@@ -88,7 +99,7 @@ export default function Gallery({
   }, [currentPath, setSketches]);
 
   useEffect(() => {
-    refresh();
+    void refresh().catch((e) => setOperationError(String(e)));
   }, [refresh]);
 
   useEffect(() => {
@@ -120,26 +131,22 @@ export default function Gallery({
     return () => window.clearTimeout(timer);
   }, [currentPath, folderNotes, folderNotesLoadedPath]);
 
-  // 拖拽 .js 文件到窗口，导入到当前目录
   useEffect(() => {
+    let disposed = false;
     let cleanup: (() => void) | undefined;
-    getCurrentWebviewWindow()
-      .onDragDropEvent(async (event) => {
-        if (event.payload.type !== "drop") return;
-        const paths: string[] = (event.payload as { type: string; paths: string[] }).paths;
-        for (const path of paths) {
-          if (!path.endsWith(".js")) continue;
-          const filename = path.split(/[\\/]/).pop() ?? "sketch";
-          const name = sanitizeName(filename.replace(/\.js$/i, "")) || "sketch";
-          const sketchPath = joinPath(currentPath, name);
-          await tauriApi.importSketch(path, sketchPath);
-          addSketch(sketchPath);
+    getCurrentWebviewWindow().onDragDropEvent(async (event) => {
+      if (event.payload.type !== "drop" || busy || showProjectImport || showSettings) return;
+      setBusy(true); setOperationError("");
+      try {
+        for (const path of event.payload.paths) {
+          if (!path.toLowerCase().endsWith(".js")) continue;
+          const imported = await tauriApi.importJsProject(path, currentPath); addSketch(imported);
         }
-        refresh();
-      })
-      .then((unlisten) => { cleanup = unlisten; });
-    return () => cleanup?.();
-  }, [addSketch, currentPath, refresh]);
+        await refresh();
+      } catch (e) { setOperationError(String(e)); } finally { setBusy(false); }
+    }).then((unlisten) => { if (disposed) unlisten(); else cleanup = unlisten; }).catch((e) => setOperationError(String(e)));
+    return () => { disposed = true; cleanup?.(); };
+  }, [addSketch, currentPath, refresh, busy, showProjectImport, showSettings]);
 
   const handleDelete = async (name: string) => {
     const sketchPath = joinPath(currentPath, name);
@@ -209,30 +216,34 @@ export default function Gallery({
     }
   };
 
-  const handleNewSketch = () => {
+  const handleNewSketch = async () => {
     const raw = prompt(t.newSketchPrompt, "untitled");
     if (!raw) return;
     const name = sanitizeName(raw) || "untitled";
-    onOpen(joinPath(currentPath, name));
+    try { const path = joinPath(currentPath, name); await tauriApi.createSketch(path, readDefaultVersion()); await refresh(); onOpen(path); }
+    catch (e) { setOperationError(String(e)); }
   };
 
-  const handleExport = async () => {
-    const dest = await save({
-      defaultPath: "p5js-sketches.zip",
-      filters: [{ name: "ZIP", extensions: ["zip"] }],
-    });
-    if (!dest) return;
-    await tauriApi.exportSketches(dest);
+  const handleExport = async (all = true) => {
+    if (busy) return;
+    try {
+      const path = all ? "" : currentPath;
+      const dest = await save({ defaultPath: all ? "p5js-sketches.zip" : `${path.split("/").pop() || "sketches"}.zip`, filters: [{ name: "ZIP", extensions: ["zip"] }] });
+      if (!dest) return;
+      setBusy(true); setOperationError(""); setOperationMessage("");
+      await tauriApi.exportFolder(path, dest); setOperationMessage(`${w.done}: ${dest}`);
+    } catch (e) { setOperationError(String(e)); } finally { setBusy(false); }
   };
 
   const handleImportZip = async () => {
-    const selected = await open({
-      filters: [{ name: "ZIP", extensions: ["zip"] }],
-      multiple: false,
-    });
-    if (!selected || typeof selected !== "string") return;
-    await tauriApi.importSketchesZip(selected);
-    refresh();
+    if (busy) return;
+    try {
+      const selected = await open({ filters: [{ name: "ZIP", extensions: ["zip"] }], multiple: false });
+      if (!selected || typeof selected !== "string" || !confirm(w.restoreHint)) return;
+      setBusy(true); setOperationError(""); setOperationMessage("");
+      const restored = await tauriApi.restoreBackup(selected); await refresh();
+      setOperationMessage(`${w.done}. ${w.restoredBackup} ${restored.backupPath}`);
+    } catch (e) { setOperationError(String(e)); } finally { setBusy(false); }
   };
 
   const openMoveDialog = async (name: string) => {
@@ -307,7 +318,7 @@ export default function Gallery({
   return (
     <div className={`flex flex-col h-screen ${light ? "bg-gray-50" : "bg-gray-900"}`}>
       <div
-        className={`flex items-center justify-between gap-4 px-6 py-4 border-b shrink-0 ${
+        className={`flex flex-col items-stretch gap-3 px-6 py-4 border-b shrink-0 ${
           light ? "bg-white border-gray-200" : "border-gray-700"
         }`}
       >
@@ -396,7 +407,7 @@ export default function Gallery({
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <div className="relative">
             <input
               value={searchQuery}
@@ -444,24 +455,27 @@ export default function Gallery({
             📁 {t.openFolder}
           </button>
           <button
-            onClick={handleNewFolder}
+            onClick={handleNewFolder} disabled={busy}
             className={`${subtleButtonClass} px-3 py-2 rounded text-sm transition-colors`}
           >
             {t.newFolder}
           </button>
+          <button disabled={busy} onClick={() => setShowProjectImport(true)} className={`${subtleButtonClass} px-3 py-2 rounded text-sm`}>↑ {w.importProjects}</button>
+          <button disabled={busy} onClick={() => void handleExport(false)} className={`${subtleButtonClass} px-3 py-2 rounded text-sm`}>↓ {w.exportFolder}</button>
+          <button disabled={busy} onClick={() => setShowSettings(true)} className={`${subtleButtonClass} px-3 py-2 rounded text-sm`}>{w.settings}</button>
           <button
-            onClick={handleImportZip}
+            onClick={handleImportZip} disabled={busy}
             title={t.importZipTitle}
             className={`${subtleButtonClass} px-3 py-2 rounded text-sm transition-colors`}
           >
-            ↑ {t.importZip}
+            ↑ {w.restoreBackup}
           </button>
           <button
-            onClick={handleExport}
+            onClick={() => void handleExport()} disabled={busy}
             title={t.exportZipTitle}
             className={`${subtleButtonClass} px-3 py-2 rounded text-sm transition-colors`}
           >
-            ↓ {t.exportZip}
+            ↓ {w.exportAll}
           </button>
 
           <div className={`w-px h-5 mx-1 ${light ? "bg-gray-200" : "bg-gray-600"}`} />
@@ -471,10 +485,12 @@ export default function Gallery({
             onUploaded={handleUploaded}
             theme={theme}
             folderPath={currentPath}
+            disabled={busy}
+            onError={setOperationError}
             language={language}
           />
           <button
-            onClick={handleNewSketch}
+            onClick={handleNewSketch} disabled={busy}
             className="bg-green-600 hover:bg-green-500 active:bg-green-700 text-white px-4 py-2 rounded text-sm font-medium transition-colors"
           >
             + {t.newSketch}
@@ -482,6 +498,19 @@ export default function Gallery({
         </div>
       </div>
 
+      {busy && <p role="status" className="text-sm px-4 py-2">{w.working}</p>}
+      {operationError && <p role="alert" className="text-red-500 text-sm px-4 py-2 select-text whitespace-pre-wrap">{operationError}</p>}
+      {operationMessage && <p role="status" className="text-green-600 text-sm px-4 py-2 select-text break-all">{operationMessage}</p>}
+      {showProjectImport && <ProjectImport currentPath={currentPath} language={language} theme={theme} onClose={() => setShowProjectImport(false)} onImported={refresh} />}
+      {showSettings && <WorkflowDialog title={w.settings} theme={theme}>
+        <label>{w.defaultVersion}
+          <select aria-label={w.defaultVersion} value={defaultVersion} onChange={(e) => { setDefaultVersion(e.target.value); storeDefaultVersion(e.target.value); }}
+            className={`block w-full border rounded px-3 py-2 mt-2 ${light ? "bg-white border-gray-300" : "bg-gray-700 border-gray-500"}`}>
+            {RUNTIMES.map((r) => <option key={r.version} value={r.version}>{r.version}</option>)}
+          </select>
+        </label><p className="text-sm opacity-70 my-3">{w.defaultHint}</p>
+        <div className="text-right"><button onClick={() => setShowSettings(false)}>{w.close}</button></div>
+      </WorkflowDialog>}
       {hasItems ? (
         <div className="flex-1 overflow-auto p-6">
           {folderNotesPanel}

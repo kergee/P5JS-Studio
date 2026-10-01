@@ -1,5 +1,5 @@
-import p5Source from "p5/lib/p5.min.js?raw";
-import p5SoundSource from "p5/lib/addons/p5.sound.min.js?raw";
+import { LEGACY_P5_VERSION } from "./runtimes";
+import { getRuntimeSources } from "./runtimeSources";
 
 type SketchAssets = Record<string, string>;
 type SketchLibraries = string[];
@@ -72,8 +72,10 @@ ${escapeScript(source)}
 export function buildSrcdoc(
   userCode: string,
   assets: SketchAssets = {},
-  libraries: SketchLibraries = []
+  libraries: SketchLibraries = [],
+  p5Version: string = LEGACY_P5_VERSION
 ): string {
+  const runtime = getRuntimeSources(p5Version);
   const assetJson = JSON.stringify(assets).replace(/<\//g, "<\\/");
   const libraryScripts = buildLibraryScripts(libraries, assets);
 
@@ -171,8 +173,8 @@ export function buildSrcdoc(
       document.documentElement.style.setProperty('zoom', String(scale));
     });
   </script>
-  <script>${escapeScript(p5Source)}</script>
-  <script>${escapeScript(p5SoundSource)}</script>
+  <script>${escapeScript(runtime.source)}</script>
+  <script>${escapeScript(runtime.sound)}</script>
   <script>
     if (window.p5) {
       window.p5.disableFriendlyErrors = true;

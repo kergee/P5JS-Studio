@@ -75,7 +75,7 @@ export const text = {
     copyLogs: "Copy",
     clear: "Clear",
     noLogs: "No logs yet",
-    currentProjectCount: (count: string) => `Current projects: ${count}`,
+    currentProjectCount: (count: string) => `Sketches in this folder: ${count}`,
     pressRun: "Press Run or Ctrl+Enter",
     zoomOutPreview: "Zoom out preview",
     resetPreviewZoom: "Reset preview zoom",
@@ -93,10 +93,10 @@ export const text = {
       "Run executes the current sketch, Save writes all files and notes, Format formats the active file, and Add File can create extra JavaScript files for the same sketch.",
     helpAssetsTitle: "Assets",
     helpAssets:
-      "Put images inside the sketch folder or the shared public folder. Relative paths such as images/pic1.png work from the sketch folder.",
+      "Use Resources to add local files and copy relative paths. Export Project ZIP includes code, notes, version and local/shared assets. Import Project ZIP keeps both same-name projects by default. Restore Backup ZIP confirms overwrites and creates a backup first.",
     helpDebugTitle: "Debug",
     helpDebug:
-      "The Debug Console shows console.log, warnings, syntax problems, and runtime errors. The editor also marks common p5 function typos.",
+      "The Debug Console shows logs, syntax problems and runtime errors. The p5.js dropdown selects a bundled runtime. API completion and typo hints currently target 1.x and are disabled for 2.x.",
     helpPreviewTitle: "Preview",
     helpPreview:
       "Large canvases can be viewed with scrollbars or the preview zoom controls. Thumbnails are captured automatically after Run.",
@@ -173,7 +173,7 @@ export const text = {
     copyLogs: "复制",
     clear: "清空",
     noLogs: "暂无日志",
-    currentProjectCount: (count: string) => `当前项目数：${count}`,
+    currentProjectCount: (count: string) => `本层草图数：${count}`,
     pressRun: "点击运行或按 Ctrl+Enter",
     zoomOutPreview: "缩小预览",
     resetPreviewZoom: "重置预览缩放",
@@ -191,10 +191,10 @@ export const text = {
       "运行会执行当前草图，保存会写入所有文件和笔记，格式化会整理当前文件，添加文件可以给同一个草图增加额外 JavaScript 文件。",
     helpAssetsTitle: "资源",
     helpAssets:
-      "图片可以放在草图文件夹或共享 public 文件夹。类似 images/pic1.png 的相对路径会从草图文件夹开始查找。",
+      "在资源面板添加本地文件并复制相对路径。导出项目 ZIP 包含代码、笔记、版本和本地及共享资源。导入项目 ZIP 默认保留同名项目的两份副本；恢复备份 ZIP 确认覆盖后先生成备份。",
     helpDebugTitle: "调试",
     helpDebug:
-      "调试控制台会显示 console.log、警告、语法问题和运行时错误。编辑器也会标记常见 p5 函数拼写错误。",
+      "调试控制台显示日志、语法问题和运行时错误。p5.js 下拉框选择内置运行版本；补全和拼写提示目前面向 1.x，2.x 已停用这些提示。",
     helpPreviewTitle: "预览",
     helpPreview:
       "大尺寸画布可以用滚动条查看，也可以用预览缩放控件缩放。缩略图会在运行后自动截取保存。",

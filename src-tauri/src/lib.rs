@@ -5,10 +5,15 @@ use std::path::PathBuf;
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager};
+mod projects;
 
 // ── Data types ────────────────────────────────────────────────────────────────
 
-#[derive(Serialize, Deserialize, Default, Clone)]
+fn default_p5_version() -> String {
+    env!("P5JS_STUDIO_P5_VERSION").to_string()
+}
+
+#[derive(Serialize, Deserialize, Clone)]
 struct SketchMeta {
     #[serde(default)]
     notes: String,
@@ -16,6 +21,19 @@ struct SketchMeta {
     files: Vec<String>,
     #[serde(default)]
     libraries: Vec<String>,
+    #[serde(rename = "p5Version", default = "default_p5_version")]
+    p5_version: String,
+}
+
+impl Default for SketchMeta {
+    fn default() -> Self {
+        Self {
+            notes: String::new(),
+            files: Vec::new(),
+            libraries: Vec::new(),
+            p5_version: default_p5_version(),
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize, Default, Clone)]
@@ -24,7 +42,7 @@ struct FolderMeta {
     notes: String,
 }
 
-#[derive(Serialize, Clone)]
+#[derive(Serialize, Deserialize, Clone)]
 struct SketchFile {
     name: String,
     code: String,
@@ -35,6 +53,8 @@ struct SketchData {
     files: Vec<SketchFile>,
     notes: String,
     libraries: Vec<String>,
+    #[serde(rename = "p5Version")]
+    p5_version: String,
     thumbnail: Option<String>, // base64 data URL
 }
 
@@ -130,6 +150,11 @@ fn read_meta(dir: &PathBuf) -> SketchMeta {
         .ok()
         .and_then(|s| serde_json::from_str(&s).ok())
         .unwrap_or_default()
+}
+
+fn read_meta_checked(dir: &PathBuf) -> Result<SketchMeta, String> {
+    let json = fs::read_to_string(dir.join("meta.json")).map_err(|e| format!("cannot read meta.json: {e}"))?;
+    serde_json::from_str(&json).map_err(|e| format!("invalid meta.json: {e}"))
 }
 
 fn write_meta(dir: &PathBuf, meta: &SketchMeta) -> Result<(), String> {
@@ -335,6 +360,7 @@ fn migrate_old_sketches(base: &PathBuf) {
                         notes: String::new(),
                         files: vec!["sketch.js".to_string()],
                         libraries: Vec::new(),
+                        ..SketchMeta::default()
                     };
                     let _ = write_meta(&folder, &meta);
                     let _ = fs::remove_file(&path);
@@ -477,21 +503,24 @@ fn read_sketch_code(dir: &PathBuf, meta: &SketchMeta) -> String {
 #[tauri::command]
 fn get_sketch(app: AppHandle, name: String) -> Result<SketchData, String> {
     let dir = sketch_dir(&app, &name)?;
-    let meta = read_meta(&dir);
+    let meta = read_meta_checked(&dir)?;
     let file_names = sketch_file_names(&dir, &meta);
 
-    let files: Vec<SketchFile> = file_names
+    let files: Result<Vec<SketchFile>, String> = file_names
         .iter()
-        .filter_map(|fname| {
-            let code = fs::read_to_string(dir.join(fname)).ok()?;
-            Some(SketchFile { name: fname.clone(), code })
+        .map(|fname| {
+            validate_path_segment(fname)?;
+            if fname.contains('/') { return Err("code files must be inside the project root".into()); }
+            let code = fs::read_to_string(dir.join(fname)).map_err(|e| format!("cannot read {fname}: {e}"))?;
+            Ok(SketchFile { name: fname.clone(), code })
         })
         .collect();
 
     Ok(SketchData {
-        files,
+        files: files?,
         notes: meta.notes,
         libraries: meta.libraries,
+        p5_version: meta.p5_version,
         thumbnail: thumbnail_data_url(&dir),
     })
 }
@@ -551,14 +580,16 @@ fn get_sketch_assets(app: AppHandle, name: String) -> HashMap<String, String> {
 }
 
 #[tauri::command]
-fn create_sketch(app: AppHandle, name: String) -> Result<(), String> {
+fn create_sketch(app: AppHandle, name: String, p5_version: Option<String>) -> Result<(), String> {
     let dir = sketch_dir(&app, &name)?;
+    if dir.exists() { return Err("a sketch or folder with that name already exists".into()); }
     fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     if !dir.join("sketch.js").exists() {
         let default_code = "function setup() {\n  createCanvas(windowWidth, windowHeight);\n  background(30, 30, 60);\n}\n\nfunction draw() {\n  fill(100, 200, 255, 80);\n  noStroke();\n  ellipse(mouseX, mouseY, 60, 60);\n}\n\nfunction windowResized() {\n  resizeCanvas(windowWidth, windowHeight);\n}\n";
         fs::write(dir.join("sketch.js"), default_code).map_err(|e| e.to_string())?;
     }
     let mut meta = read_meta(&dir);
+    if let Some(version) = p5_version { meta.p5_version = version; }
     if !meta.files.contains(&"sketch.js".to_string()) {
         meta.files.insert(0, "sketch.js".to_string());
     }
@@ -683,6 +714,7 @@ fn import_sketch(app: AppHandle, path: String, name: String) -> Result<(), Strin
         notes: String::new(),
         files: vec!["sketch.js".to_string()],
         libraries: Vec::new(),
+        ..SketchMeta::default()
     };
     write_meta(&dir, &meta)
 }
@@ -916,6 +948,7 @@ fn import_sketches_zip(app: AppHandle, zip_path: String) -> Result<Vec<String>, 
                     notes: String::new(),
                     files: vec!["sketch.js".to_string()],
                     libraries: Vec::new(),
+                    ..SketchMeta::default()
                 };
                 write_meta(&dir, &meta).ok();
             }
@@ -945,6 +978,33 @@ fn import_sketches_zip(app: AppHandle, zip_path: String) -> Result<Vec<String>, 
 mod tests {
     use super::*;
     use std::time::{SystemTime, UNIX_EPOCH};
+
+    #[test]
+    fn legacy_metadata_defaults_to_bundled_p5_version() {
+        let meta: SketchMeta = serde_json::from_str(
+            r#"{"notes":"legacy","files":["sketch.js","utils.js"],"libraries":["lib.js"]}"#,
+        ).expect("legacy metadata");
+        assert_eq!(meta.p5_version, default_p5_version());
+        assert_eq!(SketchMeta::default().p5_version, default_p5_version());
+        let saved = serde_json::to_value(&meta).expect("save legacy metadata");
+        assert_eq!(saved["p5Version"], default_p5_version());
+        assert_eq!(saved["files"], serde_json::json!(["sketch.js", "utils.js"]));
+        assert_eq!(saved["libraries"], serde_json::json!(["lib.js"]));
+    }
+
+    #[test]
+    fn metadata_edits_preserve_explicit_p5_version() {
+        let mut meta: SketchMeta = serde_json::from_str(
+            r#"{"p5Version":"1.9.4","files":["sketch.js"]}"#,
+        ).expect("versioned metadata");
+        meta.notes = "updated notes".to_string();
+        meta.libraries.push("local-library.js".to_string());
+        let saved = serde_json::to_string(&meta).expect("serialize metadata");
+        let reloaded: SketchMeta = serde_json::from_str(&saved).expect("reload metadata");
+        assert_eq!(reloaded.p5_version, "1.9.4");
+        assert_eq!(reloaded.notes, "updated notes");
+        assert_eq!(reloaded.libraries, vec!["local-library.js"]);
+    }
 
     #[test]
     fn public_libraries_are_only_collected_when_declared() {
@@ -1051,6 +1111,15 @@ pub fn run() {
             open_sketches_dir,
             export_sketches,
             import_sketches_zip,
+            projects::save_project,
+            projects::add_project_assets,
+            projects::list_project_assets,
+            projects::remove_project_asset,
+            projects::export_project,
+            projects::export_folder,
+            projects::import_project_zip,
+            projects::import_js_project,
+            projects::restore_backup,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
