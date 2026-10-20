@@ -1,0 +1,43 @@
+import { Language } from "./language";
+
+const messages = {
+  en: {
+    resources: "Resources", addResources: "Add files", resourceFolder: "Resource subfolder",
+    resourceHint: "Paths are relative to this project. Shared public assets are also bundled on export.",
+    copyPath: "Copy path", copied: "Copied", overwriteAssets: "Replace same-name resources (otherwise keep both)",
+    exportProject: "Export Project ZIP", importProjects: "Import Project ZIP", restoreBackup: "Restore Backup ZIP",
+    exportFolder: "Export This Folder", exportAll: "Back Up All", importTitle: "Import student projects",
+    target: "Target folder", newFolder: "New category", skipExisting: "Skip same-name projects (otherwise keep both)",
+    import: "Import", noAssets: "No project resources yet", working: "Working…", done: "Completed",
+    saving: "Saving…", unsaved: "Unsaved", saveFailed: "Save failed", closeTitle: "Unsaved changes",
+    closeHint: "Save changes before leaving?", saveLeave: "Save and leave", discard: "Discard changes",
+    cancel: "Cancel", close: "Close", remove: "Remove", removeHint: "Remove this resource? Code references will not be changed.",
+    settings: "Settings", defaultVersion: "Default p5.js for new projects", defaultHint: "Existing projects keep their version.",
+    nextRun: "Version changed; takes effect on next Run.", missingVersion: "This version is not installed. Choose a bundled version before running.",
+    v2Hint: "p5.js 2.x has different APIs and p5.sound. Completion/typo hints currently target 1.x and are disabled for 2.x.",
+    restoreHint: "Restore into the root and overwrite matching paths? A full backup will be created first. Unmatched local files are kept.",
+    restoredBackup: "Backup before restore:", imported: "Imported", skipped: "Skipped", failed: "Failed",
+    saved: "Saved", home: "Home", chooseZips: "Choose project ZIP files", version: "p5.js version",
+    renameFailed: "Could not rename", loading: "Loading…", unavailable: "Unavailable", stop: "Stop",
+  },
+  "zh-CN": {
+    resources: "资源", addResources: "添加文件", resourceFolder: "资源子文件夹",
+    resourceHint: "路径相对于当前项目。导出时也会打包共享 public 资源。",
+    copyPath: "复制路径", copied: "已复制", overwriteAssets: "替换同名资源（不勾选则保留两份）",
+    exportProject: "导出项目 ZIP", importProjects: "导入项目 ZIP", restoreBackup: "恢复备份 ZIP",
+    exportFolder: "导出当前文件夹", exportAll: "备份全部", importTitle: "导入学生项目",
+    target: "目标文件夹", newFolder: "新建分类目录", skipExisting: "跳过同名项目（不勾选则保留两份）",
+    import: "导入", noAssets: "项目还没有资源文件", working: "正在处理…", done: "已完成",
+    saving: "保存中…", unsaved: "未保存", saveFailed: "保存失败", closeTitle: "有未保存的修改",
+    closeHint: "离开前保存修改吗？", saveLeave: "保存并离开", discard: "放弃修改",
+    cancel: "取消", close: "关闭", remove: "移除", removeHint: "移除这个资源？代码中的引用不会自动修改。",
+    settings: "设置", defaultVersion: "新项目默认 p5.js 版本", defaultHint: "已有项目保留自己的版本。",
+    nextRun: "版本已更改，下次运行生效。", missingVersion: "该版本未安装，请选择内置版本后再运行。",
+    v2Hint: "p5.js 2.x 的 API 和声音库有所不同。补全与拼写提示目前面向 1.x，2.x 已停用这些提示。",
+    restoreHint: "恢复到根目录并覆盖同路径文件？恢复前会先生成完整备份，本地其他文件会保留。",
+    restoredBackup: "恢复前备份位置：", imported: "已导入", skipped: "已跳过", failed: "失败",
+    saved: "已保存", home: "主页", chooseZips: "选择项目 ZIP 文件", version: "p5.js 版本",
+    renameFailed: "重命名失败", loading: "正在加载…", unavailable: "未安装", stop: "停止",
+  },
+};
+export function workflowText(language: Language) { return messages[language]; }

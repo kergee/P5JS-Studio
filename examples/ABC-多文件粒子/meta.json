@@ -1,0 +1,9 @@
+{
+  "files": [
+    "utils.js",
+    "sketch.js"
+  ],
+  "notes": "自制教学示例；ABC 为虚构代号。utils.js 定义绘制函数，sketch.js 调用它。",
+  "libraries": [],
+  "p5Version": "1.11.13"
+}

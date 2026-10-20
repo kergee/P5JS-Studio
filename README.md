@@ -6,6 +6,10 @@ P5JS Studio is a local desktop IDE for [p5.js](https://p5js.org) creative coding
 
 ## Screenshot
 
+![1.3 resources and project runtime selection](docs/images/p5js-studio-v1.3-resources.png)
+
+Version 1.3 resource management, project export and runtime selection, using the repository's own anonymous example.
+
 ![P5JS Studio folder gallery and code editor with a running sketch](docs/images/p5js-studio-gallery-editor.png)
 
 Folder-based organization and live sketch preview in P5JS Studio. The demo sketch shown in the editor is by Juan Carlos Ponce Campuzano and is used here to demonstrate the application.
@@ -21,6 +25,9 @@ Folder-based organization and live sketch preview in P5JS Studio. The demo sketc
 - Returning from the editor keeps the current gallery folder and breadcrumb path.
 - Auto-captured thumbnail 1.5 seconds after you run a sketch.
 - Notes excerpt on each sketch card.
+- Optional 1–5 star ratings (clear to unrated) and independent favorites on each project card.
+- Search across project names, folder paths and notes; combine exact-rating, unrated and favorite filters, across all projects or the current folder.
+- Ratings (`rating: 0` means unrated) and favorites (`favorite`) are saved in `meta.json`, preserved by saves, renames, moves and project ZIPs. Existing projects default to unrated and not favorited.
 - Drag a `.js` file onto the window to import it.
 - Upload a single `.js` sketch with the file picker.
 - Move sketches between folders.
@@ -238,6 +245,8 @@ Common app data locations:
 | macOS | `~/Library/Application Support/com.p5jsstudio.app/sketches` |
 | Linux | `~/.local/share/com.p5jsstudio.app/sketches` |
 
+The editor's p5.js dropdown selects bundled **1.11.13** or **2.3.4** for the next Run. Each project stores its exact version in `meta.json` as `p5Version`. Legacy projects without this field use the current bundled 1.x version (1.11.13 in this release) and persist it on their next save. Settings only changes the default for new projects. Unavailable versions remain recorded and block Run until a bundled version is selected. Each runtime includes its corresponding local sound library. Switching does not convert code. API completion and typo hints currently target 1.x and are disabled for 2.x.
+
 ## Getting Started
 
 ### Prerequisites
@@ -343,18 +352,25 @@ function preload() {
 
 ### Use Libraries
 
-Put third-party `.js` files beside the sketch or in `public`, then add them to the sketch `meta.json` `libraries` array. Edit `meta.json` directly, save it, and run the sketch again. The listed libraries load before your sketch files and are included in ZIP backup and restore.
+Put third-party `.js` files beside the sketch or in `public`, then add them to the sketch `meta.json` `libraries` array. Close the project editor, edit and save `meta.json`, then reopen and run the sketch. The listed libraries load before your sketch files and are included in ZIP backup and restore.
 
-### Back Up Sketches
+### Project Submission and Backups
 
-Use **Export ZIP** to back up all sketch folders, including code, sketch notes, folder notes, thumbnails, libraries, and assets. Use **Import ZIP** to restore them.
+Students use **Export Project ZIP** in the editor to package one project's JS files, assets, libraries, notes, thumbnail and exact p5.js version. Teachers use **Import Project ZIP** in the gallery. It defaults to the current folder, supports choosing/creating categories and importing multiple ZIPs, and keeps both same-name projects unless Skip is selected. Each archive is validated before its staged directory is installed. Failures are reported separately.
 
-ZIP import uses a merge-and-overwrite strategy:
+**Export This Folder** packages a category. **Back Up All** packages the whole library. **Restore Backup ZIP** restores these directory archives to the root, confirms overwrites and first creates a full backup under the application's `backups` directory. Unmatched local files are kept. The result shows the backup location. Use project import for single-project archives and backup restore for directory archives.
 
-- Files and folders that exist in the ZIP but not locally are added.
-- Files that exist both locally and in the ZIP are overwritten without a prompt.
-- Local files that are not present in the ZIP are kept; import does not delete extra local files.
-- The same rule applies to `meta.json`, `.folder.json`, thumbnails, libraries, and assets.
+Ordinary shared `public` assets are copied into each project to preserve dynamic relative paths. An export may therefore include unused shared assets: review that directory before sharing. Declared local libraries and model dependencies are included. Remote URLs, APIs and models that were not downloaded still require a network.
+
+Project archives must contain `meta.json` and every listed code file. One wrapper directory is supported. Arbitrary HTML ZIP conversion is not implemented. See the [teaching workflow](docs/teaching-workflow.zh-CN.md) and [examples](examples/README.md).
+
+### Add Local Resources
+
+Open **Resources** and select multiple files or drop files into the window. The default subfolder is `assets`. Same-name resources keep both copies unless Replace is checked. Copy relative paths for `loadImage`, `loadSound`, etc. Removal asks for confirmation and does not modify code references. Code and metadata cannot be replaced through this panel.
+
+### Save and Rename
+
+The status shows unsaved, saving, saved and errors. Leaving or closing with changes offers Save and leave, Discard, or Cancel. Run and export save first. Renaming takes effect on the next save and moves the whole project, including assets, libraries and notes. A failed save keeps editor contents and never overwrites another project.
 
 ### Debug a Sketch
 
@@ -362,10 +378,29 @@ Use `console.log(...)` in your p5 code and check the Debug Console under the pre
 
 ## Roadmap
 
-- Optional p5 runtime switching, including a future p5 v2 compatibility mode.
-- More advanced release note automation.
-- More complete editor diagnostics.
-- Configurable autosave behavior and a clearer save status indicator.
+The product remains focused on **collecting, organizing and archiving student projects** and **editing and running p5.js offline**. New capabilities should support these workflows. ESP32 integration is an optional extension for interactive projects, preserving the main gallery and editor flows.
+
+- Autosave policy and classroom batch archive improvements.
+- p5.js 2.x completion and diagnostics.
+- Broader third-party library, model and cross-platform regression coverage.
+- Optional online model API assistance for arbitrary HTML ZIP conversion, with a proposed diff and user confirmation. Validate structure, assets and actual execution independently; model output does not guarantee a working sketch.
+
+### ESP32 integration (planned, not implemented)
+
+1. **Phase one: USB serial communication.** Start with Windows desktop and one confirmed ESP32 board: port and baud-rate selection, connect/disconnect, line-based text or JSON exchange, sensor-driven p5.js output and commands sent from p5.js to the device. Handle busy ports, unplugging, reconnection, and connection cleanup when stopping or switching projects. Prepare firmware with external tools; firmware compilation and flashing are outside this phase.
+2. **Later: Wi-Fi communication.** After hardware validation of USB, evaluate local-network WebSocket communication, device address configuration and reconnection. Networking must not become a prerequisite for ordinary offline projects.
+3. **Further work: firmware compilation and flashing.** Evaluate toolchains, firmware management and flashing as a separate scope. Focus dedicated hardware support on ESP32; Raspberry Pi and Arduino boards are not currently planned.
+
+Layout constraints:
+
+- **Keep the gallery focused on coursework.** Categories, search, ratings, favorites and import/export retain priority. Do not add persistent serial-port controls, baud-rate selectors or a device monitor to the gallery.
+- **Show hardware tools on demand in the editor.** Plan a More tools → ESP32 entry with a panel closed by default. Use a collapsible side drawer on wide windows, or a bottom panel sharing space with the Debug Console on narrower windows. Avoid continually expanding the toolbar or crowding out code and the canvas.
+- **Adapt separately for small screens and phones.** Any future mobile integration should use a dedicated tool page or full-screen panel. Mobile USB support requires its own platform and device validation; desktop support does not imply mobile compatibility.
+- **Keep hardware configuration subordinate to the project.** Future project archives may include the communication format, firmware source and wiring notes. Importing a project must not automatically connect a device or send commands. Archiving, editing and running ordinary projects remain independent of ESP32.
+
+Phase-one acceptance requires real-board bidirectional communication and disconnect handling, plus regression checks that ordinary projects can still run offline and be archived without connected hardware. These are future plans, not capabilities of the current installer.
+
+See the [Chinese talk and demo guide](docs/pcd2026-talk.zh-CN.md) and [1.3.0 changes](CHANGELOG.md).
 
 ## License
 
