@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { Language, text } from "../lib/language";
-import { DirectoryListing, SketchOverview, tauriApi } from "../lib/tauri";
+import { DirectoryListing, SketchOverview, SketchSummary, tauriApi } from "../lib/tauri";
+import { filterSketches } from "../lib/gallery";
 import { ColorTheme, isLightTheme } from "../lib/theme";
 import { APP_VERSION } from "../lib/version";
 import { useSketchStore } from "../store/useSketchStore";
@@ -58,10 +59,18 @@ export default function Gallery({
   currentPath,
   onPathChange,
 }: GalleryProps) {
-  const { sketches, setSketches, addSketch, removeSketch } = useSketchStore();
+  const { setSketches, addSketch, removeSketch } = useSketchStore();
   const [listing, setListing] = useState<DirectoryListing>(emptyListing);
   const [overview, setOverview] = useState<Record<string, SketchOverview>>({});
+  const [overviewRevision, setOverviewRevision] = useState(0);
   const [searchQuery, setSearchQuery] = useState("");
+  const [catalog, setCatalog] = useState<SketchSummary[]>([]);
+  const [favoritesOnly, setFavoritesOnly] = useState(false);
+  const [ratingFilter, setRatingFilter] = useState("all");
+  const [searchScope, setSearchScope] = useState<"all" | "folder">("all");
+  const [reviewPending, setReviewPending] = useState<Set<string>>(new Set());
+  const reviewLocks = useRef(new Set<string>());
+  const refreshGeneration = useRef(0);
   const [showHelp, setShowHelp] = useState(false);
   const [showLanguageMenu, setShowLanguageMenu] = useState(false);
   const [moveTargets, setMoveTargets] = useState<string[]>([]);
@@ -88,18 +97,21 @@ export default function Gallery({
     : "text-gray-400 hover:text-white hover:bg-gray-700";
 
   const refresh = useCallback(async () => {
-    const [nextListing, allSketches, nextOverview] = await Promise.all([
+    const generation = ++refreshGeneration.current;
+    const [nextListing, summaries] = await Promise.all([
       tauriApi.listDirectory(currentPath),
-      tauriApi.listSketches(),
-      tauriApi.getDirectoryOverview(currentPath),
+      tauriApi.listSketchSummaries(),
     ]);
+    if (generation !== refreshGeneration.current) return;
     setListing(nextListing);
-    setSketches(allSketches);
-    setOverview(nextOverview);
+    setSketches(summaries.map((item) => item.path));
+    setCatalog(summaries);
+    setOverviewRevision((revision) => revision + 1);
   }, [currentPath, setSketches]);
 
   useEffect(() => {
     void refresh().catch((e) => setOperationError(String(e)));
+    return () => { refreshGeneration.current++; };
   }, [refresh]);
 
   useEffect(() => {
@@ -149,14 +161,14 @@ export default function Gallery({
   }, [addSketch, currentPath, refresh, busy, showProjectImport, showSettings]);
 
   const handleDelete = async (name: string) => {
-    const sketchPath = joinPath(currentPath, name);
+    const sketchPath = name;
     await tauriApi.deleteSketch(sketchPath);
     removeSketch(sketchPath);
     refresh();
   };
 
   const handleDuplicate = async (name: string) => {
-    const sketchPath = joinPath(currentPath, name);
+    const sketchPath = name;
     try {
       const duplicatedPath = await tauriApi.duplicateSketch(sketchPath);
       addSketch(duplicatedPath);
@@ -247,7 +259,7 @@ export default function Gallery({
   };
 
   const openMoveDialog = async (name: string) => {
-    const sketchPath = joinPath(currentPath, name);
+    const sketchPath = name;
     const folders = await tauriApi.listFolders();
     setMoveTargets(folders);
     setMoveDestination(parentPath(sketchPath));
@@ -271,18 +283,36 @@ export default function Gallery({
     }
   };
 
-  const trimmedSearch = searchQuery.trim().toLowerCase();
-  const searchResults = trimmedSearch
-    ? sketches.filter((path) => path.toLowerCase().includes(trimmedSearch)).slice(0, 20)
-    : [];
+  const filtering = Boolean(searchQuery.trim()) || favoritesOnly || ratingFilter !== "all";
+  const visibleSketches = useMemo(() => filterSketches(catalog, {
+    query: searchQuery, favoritesOnly, rating: ratingFilter,
+    scope: filtering ? searchScope : "folder", currentPath,
+  }), [catalog, searchQuery, favoritesOnly, ratingFilter, filtering, searchScope, currentPath]);
+  const visiblePaths = JSON.stringify(visibleSketches.map((item) => item.path));
+  useEffect(() => {
+    let cancelled = false;
+    setOverview({});
+    tauriApi.getSketchOverviews(JSON.parse(visiblePaths)).then((items) => {
+      if (!cancelled) setOverview(items);
+    }).catch((error) => { if (!cancelled) setOperationError(String(error)); });
+    return () => { cancelled = true; };
+  }, [visiblePaths, overviewRevision]);
 
-  const selectSearchResult = (path: string) => {
-    setSearchQuery("");
-    onOpen(path);
+  const updateReview = async (path: string, review: { rating?: number; favorite?: boolean }) => {
+    if (reviewLocks.current.has(path)) return;
+    reviewLocks.current.add(path);
+    setReviewPending(new Set(reviewLocks.current));
+    setOperationError("");
+    try {
+      await tauriApi.setProjectReview(path, review);
+      setCatalog((items) => items.map((item) => item.path === path ? { ...item, ...review } : item));
+    } catch (error) { setOperationError(String(error)); }
+    finally { reviewLocks.current.delete(path); setReviewPending(new Set(reviewLocks.current)); }
   };
+  const clearFilters = () => { setSearchQuery(""); setFavoritesOnly(false); setRatingFilter("all"); };
 
   const breadcrumbParts = currentPath.split("/").filter(Boolean);
-  const hasItems = listing.folders.length > 0 || listing.sketches.length > 0;
+  const hasItems = (!filtering && listing.folders.length > 0) || visibleSketches.length > 0;
   const moveSourceFolder = movingSketch ? parentPath(movingSketch) : "";
   const moveUnchanged = Boolean(movingSketch) && moveDestination === moveSourceFolder;
   const folderNotesPanel = (
@@ -327,12 +357,17 @@ export default function Gallery({
             <div className="relative">
               <button
                 onClick={() => setShowLanguageMenu((value) => !value)}
+                aria-expanded={showLanguageMenu}
+                aria-controls={showLanguageMenu ? "language-options" : undefined}
                 className={`${subtleButtonClass} px-1.5 py-0.5 rounded transition-colors`}
               >
                 {t.language}
               </button>
               {showLanguageMenu && (
                 <div
+                  id="language-options"
+                  role="group"
+                  aria-label="Language / 语言"
                   className={`absolute left-0 top-6 z-20 min-w-28 rounded border p-1 shadow-lg ${
                     light ? "bg-white border-gray-200" : "bg-gray-800 border-gray-700"
                   }`}
@@ -415,37 +450,15 @@ export default function Gallery({
               onKeyDown={(e) => {
                 if (e.key === "Escape") setSearchQuery("");
               }}
-              onBlur={() => window.setTimeout(() => setSearchQuery(""), 150)}
+              aria-label={t.searchLabel}
               placeholder={t.searchPlaceholder}
-              className={`w-48 rounded border px-3 py-2 text-sm outline-none transition-colors ${
+              className={`w-72 max-w-full rounded border px-3 py-2 text-sm outline-none transition-colors ${
                 light
                   ? "border-gray-300 bg-white text-gray-900 placeholder:text-gray-400 focus:border-blue-400"
                   : "border-gray-600 bg-gray-700 text-white placeholder:text-gray-500 focus:border-blue-500"
               }`}
             />
-            {searchResults.length > 0 && (
-              <div
-                className={`absolute left-0 top-full z-30 mt-1 max-h-80 w-80 overflow-auto rounded border shadow-lg ${
-                  light ? "bg-white border-gray-200" : "bg-gray-800 border-gray-700"
-                }`}
-              >
-                {searchResults.map((path) => (
-                  <button
-                    key={path}
-                    onMouseDown={(e) => {
-                      e.preventDefault();
-                      selectSearchResult(path);
-                    }}
-                    className={`block w-full truncate px-3 py-2 text-left text-sm transition-colors ${
-                      light ? "text-gray-700 hover:bg-gray-100" : "text-gray-200 hover:bg-gray-700"
-                    }`}
-                    title={path}
-                  >
-                    {path}
-                  </button>
-                ))}
-              </div>
-            )}
+
           </div>
           <button
             onClick={handleOpenFolder}
@@ -498,6 +511,28 @@ export default function Gallery({
         </div>
       </div>
 
+      <div className={`flex flex-wrap items-center gap-3 border-b px-6 py-3 text-sm ${light ? "border-gray-200 text-gray-700" : "border-gray-700 text-gray-200"}`}>
+        <select value={searchScope} aria-label={language === "zh-CN" ? "搜索与筛选范围" : "Search and filter scope"}
+          onChange={(event) => setSearchScope(event.target.value as "all" | "folder")}
+          className={`rounded border px-2 py-1.5 ${light ? "bg-white border-gray-300" : "bg-gray-800 border-gray-600"}`}>
+          <option value="all">{t.allProjects}</option>
+          <option value="folder">{t.currentFolder}</option>
+        </select>
+        <select value={ratingFilter} aria-label={t.rating} onChange={(event) => setRatingFilter(event.target.value)}
+          className={`rounded border px-2 py-1.5 ${light ? "bg-white border-gray-300" : "bg-gray-800 border-gray-600"}`}>
+          <option value="all">{t.allRatings}</option>
+          <option value="unrated">{t.unrated}</option>
+          {[1, 2, 3, 4, 5].map((rating) => <option key={rating} value={rating}>{t.rateStars(rating)}</option>)}
+        </select>
+        <label className="flex items-center gap-2 cursor-pointer">
+          <input type="checkbox" checked={favoritesOnly} onChange={(event) => setFavoritesOnly(event.target.checked)} />
+          {t.favoritesOnly}
+        </label>
+        {filtering && <>
+          <span role="status">{t.searchResults(visibleSketches.length)}</span>
+          <button onClick={clearFilters} className={`${subtleButtonClass} rounded px-2 py-1`}>{t.clearFilters}</button>
+        </>}
+      </div>
       {busy && <p role="status" className="text-sm px-4 py-2">{w.working}</p>}
       {operationError && <p role="alert" className="text-red-500 text-sm px-4 py-2 select-text whitespace-pre-wrap">{operationError}</p>}
       {operationMessage && <p role="status" className="text-green-600 text-sm px-4 py-2 select-text break-all">{operationMessage}</p>}
@@ -513,9 +548,9 @@ export default function Gallery({
       </WorkflowDialog>}
       {hasItems ? (
         <div className="flex-1 overflow-auto p-6">
-          {folderNotesPanel}
+          {!filtering && folderNotesPanel}
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5 gap-4">
-            {listing.folders.map((name) => (
+            {!filtering && listing.folders.map((name) => (
               <div
                 key={`folder:${name}`}
                 className={`rounded-lg overflow-hidden border transition-colors group ${
@@ -566,19 +601,26 @@ export default function Gallery({
               </div>
             ))}
 
-            {listing.sketches.map((name) => {
-              const sketchPath = joinPath(currentPath, name);
+            {visibleSketches.map((item) => {
+              const sketchPath = item.path;
+              const name = sketchPath.split("/").pop() ?? sketchPath;
               return (
                 <SketchCard
                   key={`sketch:${sketchPath}`}
                   name={name}
                   sketchPath={sketchPath}
-                  notes={overview[name]?.notes ?? ""}
-                  thumbnail={overview[name]?.thumbnail ?? null}
+                  notes={item.notes}
+                  thumbnail={overview[sketchPath]?.thumbnail ?? null}
+                  rating={item.rating}
+                  favorite={item.favorite}
+                  reviewBusy={reviewPending.has(sketchPath)}
+                  showPath={filtering && searchScope === "all"}
+                  onRatingChange={(rating) => void updateReview(sketchPath, { rating })}
+                  onFavoriteChange={() => void updateReview(sketchPath, { favorite: !item.favorite })}
                   onOpen={() => onOpen(sketchPath)}
-                  onDelete={() => setPendingDelete({ type: "sketch", name })}
-                  onMove={() => openMoveDialog(name)}
-                  onDuplicate={() => handleDuplicate(name)}
+                  onDelete={() => setPendingDelete({ type: "sketch", name: sketchPath })}
+                  onMove={() => openMoveDialog(sketchPath)}
+                  onDuplicate={() => handleDuplicate(sketchPath)}
                   theme={theme}
                   language={language}
                 />
@@ -588,13 +630,13 @@ export default function Gallery({
         </div>
       ) : (
         <div className="flex-1 overflow-auto p-6">
-          {folderNotesPanel}
+          {!filtering && folderNotesPanel}
           <div className={`flex min-h-80 items-center justify-center ${light ? "text-gray-500" : "text-gray-500"}`}>
             <div className="text-center">
               <div className="text-6xl mb-4 opacity-30">{"{ }"}</div>
-              <p className="text-base font-medium">{t.noSketchesHere}</p>
+              <p className="text-base font-medium">{filtering ? t.noMatches : t.noSketchesHere}</p>
               <p className={`text-sm mt-2 ${light ? "text-gray-500" : "text-gray-600"}`}>
-                {t.emptyHint.split("\n").map((line, index) => (
+                {(filtering ? t.noMatchesHint : t.emptyHint).split("\n").map((line, index) => (
                   <span key={line}>
                     {line}
                     {index === 0 && <br />}

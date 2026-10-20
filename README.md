@@ -25,6 +25,9 @@ Folder-based organization and live sketch preview in P5JS Studio. The demo sketc
 - Returning from the editor keeps the current gallery folder and breadcrumb path.
 - Auto-captured thumbnail 1.5 seconds after you run a sketch.
 - Notes excerpt on each sketch card.
+- Optional 1–5 star ratings (clear to unrated) and independent favorites on each project card.
+- Search across project names, folder paths and notes; combine exact-rating, unrated and favorite filters, across all projects or the current folder.
+- Ratings (`rating: 0` means unrated) and favorites (`favorite`) are saved in `meta.json`, preserved by saves, renames, moves and project ZIPs. Existing projects default to unrated and not favorited.
 - Drag a `.js` file onto the window to import it.
 - Upload a single `.js` sketch with the file picker.
 - Move sketches between folders.
@@ -375,10 +378,27 @@ Use `console.log(...)` in your p5 code and check the Debug Console under the pre
 
 ## Roadmap
 
-- Optional online model API assistance for arbitrary HTML ZIP conversion, with a proposed diff and user confirmation. Validate structure, assets and actual execution independently; model output does not guarantee a working sketch.
-- p5.js 2.x completion and diagnostics.
+The product remains focused on **collecting, organizing and archiving student projects** and **editing and running p5.js offline**. New capabilities should support these workflows. ESP32 integration is an optional extension for interactive projects, preserving the main gallery and editor flows.
+
 - Autosave policy and classroom batch archive improvements.
+- p5.js 2.x completion and diagnostics.
 - Broader third-party library, model and cross-platform regression coverage.
+- Optional online model API assistance for arbitrary HTML ZIP conversion, with a proposed diff and user confirmation. Validate structure, assets and actual execution independently; model output does not guarantee a working sketch.
+
+### ESP32 integration (planned, not implemented)
+
+1. **Phase one: USB serial communication.** Start with Windows desktop and one confirmed ESP32 board: port and baud-rate selection, connect/disconnect, line-based text or JSON exchange, sensor-driven p5.js output and commands sent from p5.js to the device. Handle busy ports, unplugging, reconnection, and connection cleanup when stopping or switching projects. Prepare firmware with external tools; firmware compilation and flashing are outside this phase.
+2. **Later: Wi-Fi communication.** After hardware validation of USB, evaluate local-network WebSocket communication, device address configuration and reconnection. Networking must not become a prerequisite for ordinary offline projects.
+3. **Further work: firmware compilation and flashing.** Evaluate toolchains, firmware management and flashing as a separate scope. Focus dedicated hardware support on ESP32; Raspberry Pi and Arduino boards are not currently planned.
+
+Layout constraints:
+
+- **Keep the gallery focused on coursework.** Categories, search, ratings, favorites and import/export retain priority. Do not add persistent serial-port controls, baud-rate selectors or a device monitor to the gallery.
+- **Show hardware tools on demand in the editor.** Plan a More tools → ESP32 entry with a panel closed by default. Use a collapsible side drawer on wide windows, or a bottom panel sharing space with the Debug Console on narrower windows. Avoid continually expanding the toolbar or crowding out code and the canvas.
+- **Adapt separately for small screens and phones.** Any future mobile integration should use a dedicated tool page or full-screen panel. Mobile USB support requires its own platform and device validation; desktop support does not imply mobile compatibility.
+- **Keep hardware configuration subordinate to the project.** Future project archives may include the communication format, firmware source and wiring notes. Importing a project must not automatically connect a device or send commands. Archiving, editing and running ordinary projects remain independent of ESP32.
+
+Phase-one acceptance requires real-board bidirectional communication and disconnect handling, plus regression checks that ordinary projects can still run offline and be archived without connected hardware. These are future plans, not capabilities of the current installer.
 
 See the [Chinese talk and demo guide](docs/pcd2026-talk.zh-CN.md) and [1.3.0 changes](CHANGELOG.md).
 

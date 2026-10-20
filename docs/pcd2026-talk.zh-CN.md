@@ -72,12 +72,45 @@
 | 项目 ZIP | Project ZIP |
 | 多版本支持 | Multiple p5.js versions |
 | 保存并继续创作 | Save and revisit |
+| 创意编程 | Creative coding |
+| 草图（p5.js 作品） | Sketch |
+| 项目（代码、资源及配置） | Project |
+| 图库 | Gallery |
+| 文件夹 | Folder |
+| 文件夹笔记 | Folder Notes |
+| 笔记 | Notes |
+| 资源面板 | Resources |
+| 资源文件（图片、声音等） | Assets |
+| 运行 | Run |
+| 保存 | Save |
+| 预览 | Preview |
+| 缩略图 | Thumbnail |
+| 调试控制台 | Debug Console |
+| 评分 | Rating |
+| 1～5 星 | One to five stars |
+| 未评分 | Unrated |
+| 收藏 | Favorite |
+| 只看收藏 | Favorites only |
+| 搜索项目 | Search projects |
+| 筛选 | Filter |
+| 当前文件夹 | Current folder |
+| 导出项目 ZIP | Export Project ZIP |
+| 导入项目 ZIP | Import Project ZIP |
+| 备份全部 | Back Up All |
+| 恢复备份 ZIP | Restore Backup ZIP |
+
+界面语言入口采用跨语言标签：中文界面显示 **Language**，英文界面显示 **语言**。菜单选项始终显示 **English / 简体中文**。演示开头可先切换一次，使观众了解两种语言均可使用。
+
+讲述时区分：Sketch 是 p5.js 的草图／作品；Project 指包含代码、资源与版本等配置的完整项目。Rating（评分）和 Favorite（收藏）是独立的可选功能。Import Project ZIP（导入项目）和 Restore Backup ZIP（恢复备份）用途不同，演示导入学生作业时使用前者。
 
 - “I will give this talk in Chinese. The project is open source.” 我将用中文分享，项目已开源。
 - “It supports offline editing and archiving student projects.” 支持离线编辑和学生作业归档。
 - “Could you speak a little more slowly?” 能否说慢一点？
 - “Could you type your question?” 可以把问题打出来吗？
 - “I can show you a demo.” 我可以演示一下。
+- “You can switch between English and Chinese here.” 在这里可以切换英文和中文。
+- “Ratings and favorites are optional and independent.” 评分和收藏都是可选的，互不影响。
+- “You can filter projects by rating or favorites.” 可以按评分或收藏筛选项目。
 
 ## 可能的问题
 
