@@ -1,6 +1,6 @@
 {
   "productName": "P5JS Studio",
-  "version": "1.2.13",
+  "version": "1.3.2",
   "identifier": "com.p5jsstudio.app",
   "build": {
     "frontendDist": "../dist",

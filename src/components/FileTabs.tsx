@@ -10,6 +10,7 @@ interface FileTabsProps {
   onRemove: (name: string) => void;
   theme: ColorTheme;
   language: Language;
+  disabled?: boolean;
 }
 
 export default function FileTabs({
@@ -20,6 +21,7 @@ export default function FileTabs({
   onRemove,
   theme,
   language,
+  disabled = false,
 }: FileTabsProps) {
   const [adding, setAdding] = useState(false);
   const [newName, setNewName] = useState("");
@@ -27,6 +29,7 @@ export default function FileTabs({
   const t = text[language];
 
   const confirmAdd = () => {
+    if (disabled) return;
     const name = newName.trim();
     if (!name) { setAdding(false); return; }
     const fileName = name.endsWith(".js") ? name : `${name}.js`;
@@ -58,7 +61,7 @@ export default function FileTabs({
           onClick={() => onSwitch(f)}
         >
           <span>{f}</span>
-          {files.length > 1 && (
+          {files.length > 1 && !disabled && (
             <button
               className={`opacity-0 group-hover:opacity-100 transition-opacity leading-none ${
                 light ? "text-gray-400 hover:text-red-600" : "text-gray-500 hover:text-red-400"
@@ -79,7 +82,7 @@ export default function FileTabs({
         <div className="flex items-center gap-1 ml-1">
           <input
             autoFocus
-            value={newName}
+            value={newName} disabled={disabled}
             placeholder="filename.js"
             onChange={(e) => setNewName(e.target.value.replace(/[^a-zA-Z0-9_.-]/g, ""))}
             onKeyDown={(e) => {
@@ -94,7 +97,7 @@ export default function FileTabs({
         </div>
       ) : (
         <button
-          onClick={() => setAdding(true)}
+          onClick={() => setAdding(true)} disabled={disabled}
           className={`ml-1 text-xs px-2 py-1 rounded transition-colors ${
             light
               ? "text-gray-500 hover:text-gray-900 hover:bg-white"

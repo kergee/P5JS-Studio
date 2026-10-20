@@ -1,4 +1,10 @@
 import { useState, useCallback, useEffect, useRef, type PointerEvent as ReactPointerEvent } from "react";
+import { save as saveDialog } from "@tauri-apps/plugin-dialog";
+import { getCurrentWindow } from "@tauri-apps/api/window";
+import ProjectResources from "./ProjectResources";
+import WorkflowDialog from "./WorkflowDialog";
+import { workflowText } from "../lib/workflowText";
+import { getRuntime, RUNTIMES, readDefaultVersion } from "../lib/runtimes";
 import CodeMirror from "@uiw/react-codemirror";
 import { javascript } from "@codemirror/lang-javascript";
 import { oneDark } from "@codemirror/theme-one-dark";
@@ -34,7 +40,8 @@ function clampEditorWidthPercent(width: number) {
 }
 
 function readStoredEditorWidthPercent() {
-  const stored = Number(localStorage.getItem(EDITOR_PREVIEW_SPLIT_KEY));
+  const value = localStorage.getItem(EDITOR_PREVIEW_SPLIT_KEY);
+  const stored = value === null ? NaN : Number(value);
   return Number.isFinite(stored)
     ? clampEditorWidthPercent(stored)
     : DEFAULT_EDITOR_WIDTH_PERCENT;
@@ -80,18 +87,33 @@ export default function Editor({ initialName, onBack, theme, onToggleTheme, lang
   const [assets, setAssets] = useState<SketchAssets>({});
   const [libraries, setLibraries] = useState<string[]>([]);
   const [runTrigger, setRunTrigger] = useState(0);
-  const [savedMsg, setSavedMsg] = useState(false);
+  const [p5Version, setP5Version] = useState(readDefaultVersion);
+  const [savedSnapshot, setSavedSnapshot] = useState<string | null>(null);
+  const [persistedName, setPersistedName] = useState<string | null>(initialName ?? null);
+  const [loaded, setLoaded] = useState(false);
+  const [operationBusy, setBusy] = useState(false);
+  const [resourceBusy, setResourceBusy] = useState(false);
+  const busy = operationBusy || resourceBusy;
+  const [operationError, setOperationError] = useState("");
+  const [operationMessage, setOperationMessage] = useState("");
+  const [showResources, setShowResources] = useState(false);
+  const [leaveAction, setLeaveAction] = useState<"gallery" | "window" | null>(null);
+  const [runningVersion, setRunningVersion] = useState("");
+  const savingRef = useRef(false);
+  const operationRef = useRef(false);
+  const w = workflowText(language);
   const [formatMsg, setFormatMsg] = useState<string | null>(null);
   const [debugMessages, setDebugMessages] = useState<DebugMessage[]>([]);
   const [editorWidthPercent, setEditorWidthPercent] = useState(readStoredEditorWidthPercent);
   const [isResizing, setIsResizing] = useState(false);
   const [fontSize, setFontSize] = useState(() => {
-    const stored = Number(localStorage.getItem(EDITOR_FONT_SIZE_KEY));
+    const value = localStorage.getItem(EDITOR_FONT_SIZE_KEY);
+    const stored = value === null ? NaN : Number(value);
     return Number.isFinite(stored)
       ? clampEditorFontSize(stored)
       : DEFAULT_EDITOR_FONT_SIZE;
   });
-  const { addSketch, sketches } = useSketchStore();
+  const { addSketch, removeSketch } = useSketchStore();
   const splitContainerRef = useRef<HTMLDivElement>(null);
   const pendingThumbnail = useRef<string | null>(null);
   const light = isLightTheme(theme);
@@ -100,17 +122,22 @@ export default function Editor({ initialName, onBack, theme, onToggleTheme, lang
     ? "text-gray-600 hover:text-gray-950 hover:bg-gray-100"
     : "text-gray-400 hover:text-white hover:bg-gray-700";
 
-  // Load sketch on mount
+  const snapshot = JSON.stringify({ name, files, notes, libraries, p5Version });
+  const dirty = loaded && snapshot !== savedSnapshot;
+
   useEffect(() => {
-    if (initialName) {
-      tauriApi.getSketch(initialName).then((data) => {
-        setFiles(data.files.length > 0 ? data.files : [{ name: "sketch.js", code: "" }]);
-        setActiveFile(data.files[0]?.name ?? "sketch.js");
-        setNotes(data.notes);
-        setLibraries(data.libraries ?? []);
-      });
-      tauriApi.getSketchAssets(initialName).then(setAssets);
-    }
+    let cancelled = false;
+    if (!initialName) { setLoaded(true); return; }
+    Promise.all([tauriApi.getSketch(initialName), tauriApi.getSketchAssets(initialName)])
+      .then(([data, nextAssets]) => {
+        if (cancelled) return;
+        const nextFiles = data.files.length ? data.files : [{ name: "sketch.js", code: "" }];
+        setFiles(nextFiles); setActiveFile(nextFiles[0].name); setNotes(data.notes);
+        setLibraries(data.libraries); setP5Version(data.p5Version); setAssets(nextAssets);
+        setSavedSnapshot(JSON.stringify({ name: initialName, files: nextFiles, notes: data.notes, libraries: data.libraries, p5Version: data.p5Version }));
+        setLoaded(true);
+      }).catch((e) => { if (!cancelled) setOperationError(String(e)); });
+    return () => { cancelled = true; };
   }, [initialName]);
 
   const activeCode = files.find((f) => f.name === activeFile)?.code ?? "";
@@ -210,33 +237,63 @@ export default function Editor({ initialName, onBack, theme, onToggleTheme, lang
 
   const combinedCode = files.map((f) => f.code).join("\n");
 
-  const save = useCallback(async () => {
-    // Ensure sketch folder exists
-    if (!sketches.includes(name)) {
-      await tauriApi.createSketch(name);
-      addSketch(name);
-    }
-    // Save each file
-    for (const f of files) {
-      await tauriApi.saveSketchFile(name, f.name, f.code);
-    }
-    // Save notes
-    await tauriApi.saveNotes(name, notes);
-    // Preserve per-sketch library declarations from meta.json.
-    await tauriApi.saveLibraries(name, libraries);
-    // Save pending thumbnail if any
-    if (pendingThumbnail.current) {
-      await tauriApi.saveThumbnail(name, pendingThumbnail.current);
-      pendingThumbnail.current = null;
-    }
-    setSavedMsg(true);
-    setTimeout(() => setSavedMsg(false), 2000);
-  }, [name, files, notes, libraries, sketches, addSketch]);
+  const save = useCallback(async (withinOperation = false): Promise<boolean> => {
+    if (!loaded || savingRef.current || (operationRef.current && !withinOperation)) return false;
+    savingRef.current = true; setBusy(true); setOperationError(""); setOperationMessage("");
+    try {
+      await tauriApi.saveProject({ originalName: persistedName, name, files, notes, libraries, p5Version });
+      if (persistedName && persistedName !== name) removeSketch(persistedName);
+      addSketch(name); setPersistedName(name); setSavedSnapshot(snapshot);
+      if (pendingThumbnail.current) {
+        try { await tauriApi.saveThumbnail(name, pendingThumbnail.current); pendingThumbnail.current = null; }
+        catch (e) { setOperationError(String(e)); }
+      }
+      return true;
+    } catch (e) { setOperationError(`${w.saveFailed}: ${String(e)}`); return false; }
+    finally { savingRef.current = false; if (!operationRef.current) setBusy(false); }
+  }, [loaded, persistedName, name, files, notes, libraries, p5Version, snapshot, addSketch, removeSketch, w.saveFailed]);
+
+  const refreshAssets = useCallback(async () => { setAssets(await tauriApi.getSketchAssets(name)); }, [name]);
+  const exportProject = async () => {
+    if (savingRef.current || operationRef.current || !loaded) return;
+    operationRef.current = true; setBusy(true);
+    try {
+      const dest = await saveDialog({ defaultPath: `${displayName}.zip`, filters: [{ name: "ZIP", extensions: ["zip"] }] });
+      if (!dest || !await save(true)) return;
+      setBusy(true); setOperationMessage("");
+      await tauriApi.exportProject(name, dest); setOperationMessage(`${w.done}: ${dest}`);
+    } catch (e) { setOperationError(String(e)); } finally { operationRef.current = false; setBusy(false); }
+  };
+
+  const requestLeave = useCallback((action: "gallery" | "window") => {
+    if (savingRef.current || operationRef.current || resourceBusy) return;
+    if (dirty) setLeaveAction(action);
+    else if (action === "gallery") onBack();
+    else void getCurrentWindow().destroy().catch((e) => setOperationError(String(e)));
+  }, [dirty, onBack, resourceBusy]);
+  useEffect(() => {
+    let disposed = false;
+    let cleanup: (() => void) | undefined;
+    getCurrentWindow().onCloseRequested((event) => { event.preventDefault(); requestLeave("window"); })
+      .then((unlisten) => { if (disposed) unlisten(); else cleanup = unlisten; })
+      .catch((e) => setOperationError(String(e)));
+    return () => { disposed = true; cleanup?.(); };
+  }, [requestLeave]);
+  useEffect(() => {
+    const handler = (event: BeforeUnloadEvent) => { if (dirty) { event.preventDefault(); event.returnValue = ""; } };
+    window.addEventListener("beforeunload", handler);
+    return () => window.removeEventListener("beforeunload", handler);
+  }, [dirty]);
 
   const run = useCallback(async () => {
-    await save();
+    if (!loaded || savingRef.current || operationRef.current) return;
+    if (!getRuntime(p5Version)) { setOperationError(w.missingVersion); return; }
+    operationRef.current = true; setBusy(true);
+    try {
+    if (!await save(true)) return;
+    await refreshAssets();
 
-    const diagnostics = getJavaScriptDiagnostics(combinedCode);
+    const diagnostics = getRuntime(p5Version)?.major === 1 ? getJavaScriptDiagnostics(combinedCode) : [];
     const staticMessages: DebugMessage[] = diagnostics.map((diagnostic) => ({
       level: diagnostic.level === "error" ? "error" : "warn",
       message: diagnostic.message,
@@ -258,8 +315,11 @@ export default function Editor({ initialName, onBack, theme, onToggleTheme, lang
       return;
     }
 
+    setRunningVersion(p5Version);
     setRunTrigger((t) => t + 1);
-  }, [combinedCode, save]);
+    } catch (e) { setOperationError(String(e)); }
+    finally { operationRef.current = false; setBusy(false); }
+  }, [loaded, combinedCode, save, p5Version, w.missingVersion, refreshAssets]);
 
   const handleThumbnail = useCallback((dataUrl: string) => {
     pendingThumbnail.current = dataUrl;
@@ -273,23 +333,19 @@ export default function Editor({ initialName, onBack, theme, onToggleTheme, lang
 
   const handleAddFile = useCallback(async (fileName: string) => {
     if (files.find((f) => f.name === fileName)) return;
-    if (initialName) {
-      await tauriApi.addSketchFile(initialName, fileName);
-    }
+
     setFiles((prev) => [...prev, { name: fileName, code: `// ${fileName}\n` }]);
     setActiveFile(fileName);
-  }, [files, initialName]);
+  }, [files]);
 
   const handleRemoveFile = useCallback(async (fileName: string) => {
-    if (initialName) {
-      await tauriApi.removeSketchFile(initialName, fileName);
-    }
+
     setFiles((prev) => {
       const next = prev.filter((f) => f.name !== fileName);
       if (activeFile === fileName) setActiveFile(next[0]?.name ?? "");
       return next;
     });
-  }, [activeFile, initialName]);
+  }, [activeFile]);
 
   const keymapExt = keymap.of([
     { key: "Ctrl-Enter", mac: "Ctrl-Enter", run: () => { run(); return true; } },
@@ -304,12 +360,12 @@ export default function Editor({ initialName, onBack, theme, onToggleTheme, lang
     <div className={`flex flex-col h-screen select-none ${light ? "bg-gray-50" : "bg-gray-900"}`}>
       {/* Toolbar */}
       <div
-        className={`flex items-center gap-3 px-4 py-2 border-b shrink-0 ${
+        className={`flex flex-wrap items-center gap-2 px-4 py-2 border-b shrink-0 ${
           light ? "bg-white border-gray-200" : "bg-gray-800 border-gray-700"
         }`}
       >
         <button
-          onClick={onBack}
+          onClick={() => requestLeave("gallery")} disabled={busy}
           className={`${subtleButtonClass} text-sm px-2 py-1 rounded transition-colors`}
         >
           ← {t.backToGallery}
@@ -319,7 +375,7 @@ export default function Editor({ initialName, onBack, theme, onToggleTheme, lang
           {editingName ? (
             <input
               autoFocus
-              value={renameDraft}
+              value={renameDraft} disabled={busy}
               onChange={(e) => setRenameDraft(sanitizeSketchName(e.target.value))}
               onBlur={commitRename}
               onKeyDown={(e) => {
@@ -333,14 +389,25 @@ export default function Editor({ initialName, onBack, theme, onToggleTheme, lang
           ) : (
             <button
               className={`text-sm px-1 ${light ? "text-gray-700 hover:text-black" : "text-gray-300 hover:text-white"}`}
-              onClick={startRename}
+              onClick={startRename} disabled={busy || !loaded}
               title={t.clickToRename}
             >
               {displayName}
             </button>
           )}
-          {savedMsg && <span className="text-green-400 text-xs">{t.saved}</span>}
+          <span role="status" className={`text-xs ${dirty ? "text-amber-500" : "text-green-600"}`}>{!loaded ? w.loading : busy ? w.saving : dirty ? w.unsaved : w.saved}</span>
         </div>
+        <label className="text-xs flex items-center gap-1">
+          p5.js
+          <select aria-label={w.version} value={p5Version} disabled={busy || !loaded}
+            onChange={(e) => setP5Version(e.target.value)}
+            className={`border rounded px-2 py-1.5 ${light ? "bg-white border-gray-300" : "bg-gray-700 border-gray-500"}`}>
+            {!getRuntime(p5Version) && <option value={p5Version}>{p5Version} ({w.unavailable})</option>}
+            {RUNTIMES.map((runtime) => <option key={runtime.version} value={runtime.version}>{runtime.version}</option>)}
+          </select>
+        </label>
+        <button disabled={busy || !loaded} className={`${subtleButtonClass} px-2 py-1.5 text-sm rounded`} onClick={() => setShowResources((v) => !v)}>{w.resources}</button>
+        <button disabled={busy || !loaded} className={`${subtleButtonClass} px-2 py-1.5 text-sm rounded`} onClick={exportProject}>{w.exportProject}</button>
         <button
           onClick={() => setShowNotes((v) => !v)}
           className={`text-sm px-3 py-1.5 rounded transition-colors ${
@@ -380,19 +447,25 @@ export default function Editor({ initialName, onBack, theme, onToggleTheme, lang
         </button>
         {formatMsg && <span className="text-gray-500 text-xs max-w-48 truncate">{formatMsg}</span>}
         <button
-          onClick={run}
+          onClick={() => void run().catch((e) => setOperationError(String(e)))} disabled={busy || !loaded}
           className="bg-green-600 hover:bg-green-500 text-white px-4 py-1.5 rounded text-sm font-medium transition-colors"
         >
           ▶ {t.run}
         </button>
         <button
-          onClick={save}
+          onClick={() => void save()} disabled={busy || !loaded}
           className="bg-blue-600 hover:bg-blue-500 text-white px-4 py-1.5 rounded text-sm font-medium transition-colors"
         >
           {t.save}
         </button>
       </div>
 
+      {operationError && <p role="alert" className="text-red-500 text-sm px-4 py-2 whitespace-pre-wrap select-text">{operationError}</p>}
+      {operationMessage && <p role="status" className="text-green-600 text-sm px-4 py-2 select-text">{operationMessage}</p>}
+      {!getRuntime(p5Version) && <p className="text-amber-500 text-xs px-4 py-1">{w.missingVersion}</p>}
+      {runningVersion && runningVersion !== p5Version && <p className="text-amber-500 text-xs px-4 py-1">{w.nextRun}</p>}
+      {getRuntime(p5Version)?.major === 2 && <p className="text-xs opacity-70 px-4 py-1">{w.v2Hint}</p>}
+      {showResources && <ProjectResources name={name} theme={theme} language={language} ensureSaved={save} onAssetsChanged={refreshAssets} onBusyChange={setResourceBusy} />}
       {/* File tabs */}
       <FileTabs
         files={files.map((f) => f.name)}
@@ -402,6 +475,7 @@ export default function Editor({ initialName, onBack, theme, onToggleTheme, lang
         onRemove={handleRemoveFile}
         theme={theme}
         language={language}
+        disabled={busy || !loaded}
       />
 
       {/* Notes panel (collapsible) */}
@@ -412,7 +486,7 @@ export default function Editor({ initialName, onBack, theme, onToggleTheme, lang
           }`}
         >
           <textarea
-            value={notes}
+            value={notes} disabled={busy || !loaded}
             onChange={(e) => setNotes(e.target.value)}
             placeholder={t.addNotesPlaceholder}
             rows={3}
@@ -439,9 +513,10 @@ export default function Editor({ initialName, onBack, theme, onToggleTheme, lang
           <CodeMirror
             key={activeFile}
             value={activeCode}
+            readOnly={busy || !loaded}
             height="100%"
             theme={light ? "light" : oneDark}
-            extensions={[javascript(), p5LintExtension, p5CompletionExtension, keymapExt]}
+            extensions={getRuntime(p5Version)?.major === 1 ? [javascript(), p5LintExtension, p5CompletionExtension, keymapExt] : [javascript(), keymapExt]}
             onChange={updateCode}
             style={{ height: "100%", fontSize: `${fontSize}px` }}
             basicSetup={{ lineNumbers: true, foldGutter: true, autocompletion: true }}
@@ -499,6 +574,7 @@ export default function Editor({ initialName, onBack, theme, onToggleTheme, lang
             assets={assets}
             libraries={libraries}
             runTrigger={runTrigger}
+            p5Version={p5Version}
             onThumbnail={handleThumbnail}
             debugMessages={debugMessages}
             onDebugMessage={appendDebugMessage}
@@ -509,6 +585,21 @@ export default function Editor({ initialName, onBack, theme, onToggleTheme, lang
         </div>
         {isResizing && <div className="fixed inset-0 z-50 cursor-col-resize" />}
       </div>
+      {leaveAction && <WorkflowDialog title={w.closeTitle} theme={theme}>
+        <p>{w.closeHint}</p>
+        <div className="flex justify-end gap-4 mt-5">
+          <button disabled={busy} onClick={() => setLeaveAction(null)}>{w.cancel}</button>
+          <button disabled={busy} onClick={() => {
+            const action = leaveAction; setLeaveAction(null);
+            if (action === "gallery") onBack(); else void getCurrentWindow().destroy().catch((e) => setOperationError(String(e)));
+          }}>{w.discard}</button>
+          <button disabled={busy} className="bg-blue-600 text-white rounded px-3 py-2" onClick={async () => {
+            if (!await save()) return;
+            const action = leaveAction; setLeaveAction(null);
+            if (action === "gallery") onBack(); else await getCurrentWindow().destroy().catch((e) => setOperationError(String(e)));
+          }}>{w.saveLeave}</button>
+        </div>
+      </WorkflowDialog>}
     </div>
   );
 }

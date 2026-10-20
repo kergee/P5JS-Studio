@@ -1,0 +1,8 @@
+{
+  "files": [
+    "sketch.js"
+  ],
+  "notes": "自制教学示例；DEF 为虚构代号。1.x preload 加载本地图片与声音，点击画布播放短音。",
+  "libraries": [],
+  "p5Version": "1.11.13"
+}
