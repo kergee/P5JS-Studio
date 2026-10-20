@@ -6,6 +6,7 @@ use base64::{engine::general_purpose::STANDARD, Engine as _};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager};
 mod projects;
+mod gallery;
 
 // ── Data types ────────────────────────────────────────────────────────────────
 
@@ -23,6 +24,10 @@ struct SketchMeta {
     libraries: Vec<String>,
     #[serde(rename = "p5Version", default = "default_p5_version")]
     p5_version: String,
+    #[serde(default)]
+    rating: u8,
+    #[serde(default)]
+    favorite: bool,
 }
 
 impl Default for SketchMeta {
@@ -32,6 +37,8 @@ impl Default for SketchMeta {
             files: Vec::new(),
             libraries: Vec::new(),
             p5_version: default_p5_version(),
+            rating: 0,
+            favorite: false,
         }
     }
 }
@@ -1091,6 +1098,9 @@ pub fn run() {
             list_folders,
             get_sketch,
             get_directory_overview,
+            gallery::list_sketch_summaries,
+            gallery::get_sketch_overviews,
+            gallery::set_project_review,
             get_sketch_assets,
             create_sketch,
             create_folder,

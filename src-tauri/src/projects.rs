@@ -232,11 +232,14 @@ fn save_into(base: &PathBuf, project: ProjectSave) -> Result<(), String> {
     if let Some(src) = &source { if !is_sketch_dir(src) { return Err("original project no longer exists".into()); } }
     let stage = tempfile::tempdir_in(&parent).map_err(|e| e.to_string())?;
     let stage_path = stage.path().to_path_buf();
+    // Review annotations belong to the project and must survive editor saves/renames.
+    let mut preserved_meta = SketchMeta::default();
     if let Some(src) = &source {
         let mut files = BTreeMap::new();
         collect_files(src, "", &mut files)?;
         write_files(&stage_path, &files)?;
         let old_meta = read_meta_checked(src)?;
+        preserved_meta = old_meta.clone();
         for old in old_meta.files {
             if !project.files.iter().any(|f| f.name == old) {
                 let path = safe_path(&stage_path, &old)?;
@@ -256,6 +259,7 @@ fn save_into(base: &PathBuf, project: ProjectSave) -> Result<(), String> {
     write_meta(&stage_path, &SketchMeta {
         files: project.files.iter().map(|f| f.name.clone()).collect(),
         notes: project.notes, libraries: project.libraries, p5_version: project.p5_version,
+        ..preserved_meta
     })?;
     let backup = tempfile::tempdir_in(&parent).map_err(|e| e.to_string())?;
     let old = backup.path().join("original");
@@ -423,6 +427,26 @@ mod tests {
         }).unwrap();
         fs::create_dir_all(base.join(name).join("assets")).unwrap();
         fs::write(base.join(name).join("assets/图片.png"), b"local image").unwrap();
+    }
+
+    #[test]
+    fn reviews_survive_editor_save_rename_and_archive_roundtrip() {
+        let temp = tempfile::tempdir().unwrap();
+        let base = temp.path().join("base"); fs::create_dir(&base).unwrap();
+        seed(&base, "ABC");
+        let mut meta = read_meta_checked(&base.join("ABC")).unwrap();
+        meta.rating = 4; meta.favorite = true;
+        write_meta(&base.join("ABC"), &meta).unwrap();
+        save_into(&base, ProjectSave { original_name: Some("ABC".into()), name: "改名后".into(),
+            files: vec![SketchFile { name: "sketch.js".into(), code: "changed code".into() }],
+            notes: "new notes".into(), libraries: vec![], p5_version: "2.3.4".into() }).unwrap();
+        let saved = read_meta_checked(&base.join("改名后")).unwrap();
+        assert_eq!(saved.rating, 4); assert!(saved.favorite); assert_eq!(saved.notes, "new notes");
+        let archive = temp.path().join("project.zip");
+        write_zip(archive.to_str().unwrap(), &project_archive(&base, "改名后").unwrap()).unwrap();
+        import_project_into(&base, archive.to_str().unwrap(), "导入", false).unwrap();
+        let imported = read_meta_checked(&base.join("导入/project")).unwrap();
+        assert_eq!(imported.rating, 4); assert!(imported.favorite);
     }
 
     #[test]

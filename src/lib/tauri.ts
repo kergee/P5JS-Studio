@@ -18,6 +18,13 @@ export interface SketchOverview {
   thumbnail: string | null;
 }
 
+export interface SketchSummary {
+  path: string;
+  notes: string;
+  rating: number; // 0 = unrated; 1–5 = optional project rating
+  favorite: boolean;
+}
+
 export interface DirectoryListing {
   folders: string[];
   sketches: string[];
@@ -35,6 +42,10 @@ export interface ProjectSave {
 }
 
 export const tauriApi = {
+  listSketchSummaries: () => invoke<SketchSummary[]>("list_sketch_summaries"),
+  getSketchOverviews: (names: string[]) => invoke<Record<string, SketchOverview>>("get_sketch_overviews", { names }),
+  setProjectReview: (name: string, review: { rating?: number; favorite?: boolean }) =>
+    invoke<void>("set_project_review", { name, ...review }),
   saveProject: (project: ProjectSave) => invoke<void>("save_project", { project }),
   listProjectAssets: (name: string) => invoke<AssetEntry[]>("list_project_assets", { name }),
   addProjectAssets: (name: string, paths: string[], folder: string, overwrite: boolean) =>
