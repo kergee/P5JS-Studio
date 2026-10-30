@@ -97,7 +97,7 @@ sketches/
 
 `p5.sound` 已内置并默认加载，所以声音类草图可以直接使用 `loadSound()` 等 API。
 
-其他经典浏览器全局脚本库，第一版就是直接编辑草图目录里的 `meta.json`。把库文件放到草图目录或共享 `public` 文件夹，然后把相对路径写进 `libraries` 数组：
+其他经典浏览器全局脚本库，可以在资源面板管理，也可以编辑草图目录里的 `meta.json`。把库文件放到草图目录或共享 `public` 文件夹，然后把相对路径写进 `libraries` 数组：
 
 ```json
 {
@@ -118,74 +118,17 @@ sketches/
       p5.play.js
 ```
 
-库会按数组顺序在草图代码之前加载。草图目录里的同名库优先于 `public` 中的共享库。缺失的库路径会显示在 Debug Console 中。
+库会按数组顺序在草图代码之前加载。草图目录里的同名库优先于 `public` 中的共享库。缺失的已声明库会在运行前提示具体路径。
 
-这一版暂时没有库管理界面。它支持会暴露浏览器全局变量的本地传统脚本，不支持自动安装 npm 包、ES module import，或自动从 CDN 下载。
+资源面板可管理本地脚本声明与加载顺序。它支持会暴露浏览器全局变量的本地传统脚本，不支持自动安装 npm 包、ES module import，或自动从 CDN 下载。
 
-### 本地 ml5.js 模型
+### 可选第三方库兼容
 
-ml5 示例要离线运行，需要把 JavaScript 库和模型文件都放进草图可访问的本地库路径。常见共享目录结构如下：
+第三方库服务于已有作品的归档与离线复现。P5JS Studio 提供统一的本地经典脚本加载，不提供专用机器学习或 3D 工作台，也不承诺任意库、模型或版本全面兼容。已有 ml5 路径适配继续保留。
 
-```text
-sketches/
-  public/
-    libraries/
-      ml5.min.js
-      ml5-models/
-        sentiment_cnn_v1/
-          model.json
-          metadata.json
-          group1-shard1of1
-        ar_portrait_depth/
-          model.json
-          group1-shard1of3.bin
-        selfie_segmentation_general/
-          model.json
-          group1-shard1of1.bin
-```
+在编辑器的 **资源 → 项目依赖（可选）** 中选择本地 JS、调整加载顺序或移除声明，修改随项目保存，下次运行生效。缺失或无法读取的已声明脚本会在运行前列出；检查不会执行库，也不能证明模型、动态资源或在线 API 离线可用。先通过“添加文件”放入项目，或使用已有共享 public 文件。
 
-然后在草图 `meta.json` 中声明 ml5：
-
-```json
-{
-  "files": ["sketch.js"],
-  "libraries": ["libraries/ml5.min.js"]
-}
-```
-
-对于支持模型 URL 选项的 ml5 模型，把这些选项指向本地 `model.json`：
-
-```js
-const depth = await ml5.depthEstimation("ARPortraitDepth", {
-  depthModelUrl: "libraries/ml5-models/ar_portrait_depth/model.json",
-  segmentationModelUrl: "libraries/ml5-models/selfie_segmentation_general/model.json",
-  applySegmentationMask: false
-});
-```
-
-FaceMesh、HandPose 这类 MediaPipe 后端模型，保持 `runtime: "mediapipe"`，并把 `solutionPath` 指向本地 MediaPipe 包目录：
-
-```js
-const faceMesh = await ml5.faceMesh({
-  runtime: "mediapipe",
-  maxFaces: 1,
-  flipHorizontal: true,
-  solutionPath: "libraries/mediapipe/face_mesh"
-});
-```
-
-`ml5.sentiment()` 要继续使用 `"MovieReviews"` 作为模型名，不要直接传本地文件夹路径。P5JS Studio 会在本地存在 `libraries/ml5-models/sentiment_cnn_v1/` 时，把 ml5 默认访问的 `sentiment_cnn_v1` 模型地址重定向到本地：
-
-```js
-const sentiment = await ml5.sentiment("MovieReviews");
-const result = await sentiment.predict("I love this sketch");
-```
-
-后续其它 ml5 模型也按同一思路迁移：下载该模型的 `model.json`、元数据文件和所有权重分片，保持原始相对文件名，放到 `public/libraries/ml5-models/<model-name>/`，然后在代码里通过对应模型支持的选项传入本地 `model.json`，常见选项名包括 `modelUrl`、`modelURL`、`detectorModelUrl`、`landmarkModelUrl` 或模型自己的 URL 选项。如果该模型使用的是 MediaPipe solution 包而不是 TFJS 权重分片，就复制整个 MediaPipe 包目录，并使用 `solutionPath`。
-
-### 离线优先
-
-p5.js v1 和 p5.sound 会在构建时通过 Vite raw import 打包进应用，因此草图运行不需要联网。
+ml5 的可选配置见 [本地模型兼容说明](docs/optional-ml5-models.zh-CN.md)。
 
 ## 快捷键
 
@@ -352,7 +295,7 @@ function preload() {
 
 ### 使用第三方库
 
-把第三方 `.js` 文件放到草图目录或 `public` 目录，然后把路径加入草图 `meta.json` 的 `libraries` 数组。关闭项目编辑器后修改 `meta.json`，保存后重新打开并运行草图。库会先于草图文件加载，并会跟随 ZIP 导入导出一起备份和恢复。
+把第三方 `.js` 文件放到项目中，在“资源 → 项目依赖（可选）”加入声明并排序，然后保存、运行。共享 public 库也可继续通过关闭编辑器后编辑 `meta.json` 的 `libraries` 数组声明。库会先于草图文件加载，并会跟随 ZIP 导入导出一起备份和恢复。
 
 ### 项目提交与备份
 
@@ -382,23 +325,22 @@ function preload() {
 
 - 自动保存策略及课堂批量归档体验。
 - 更完整的 p5.js 2.x 补全和诊断。
-- 更完整的第三方库、复杂模型和跨平台回归验证。
+- 围绕项目依赖完整性和离线复现补充验证；ml5 / three.js 保留为可选兼容与示例，暂缓专用模型管理和 3D 编辑功能。
 - 通用 HTML ZIP：后续探索在线大模型 API 辅助转换，先预览差异，再由用户确认保存。结构校验、资源检查和实际运行结果必须独立验证，模型输出不保证可运行。
 
-### ESP32 接入（规划中，尚未实现）
+### ESP32 USB 串口（源码原型，待实机验收）
 
-1. **第一阶段：USB 串口通信。** 先以 Windows 桌面版和一款确定的 ESP32 开发板验证串口选择、波特率、连接／断开、文本行或 JSON 数据收发，以及传感器控制 p5.js 画面、p5.js 发送控制指令两个方向。处理端口占用、拔线、重连、停止运行与切换项目时的连接释放。设备固件通过外部工具预先准备，第一阶段不包含固件编译或烧录。
-2. **后续阶段：Wi-Fi 通信。** 在 USB 方案通过实机验证后，再评估局域网 WebSocket、设备地址配置和断线重连；不作为普通项目离线运行的前置条件。
-3. **更后阶段：固件编译与烧录。** 单独评估工具链、固件管理与烧录流程，不与第一阶段捆绑。硬件适配优先聚焦 ESP32，当前不安排树莓派或 Arduino 开发板的专门支持。
+Windows 编辑器通过 **更多工具 → ESP32** 按需打开。底部“调试 / ESP32”共用工具区，默认占预览区约三分之一，可调整、折叠，最高一半；图库不增加硬件控件，非 Windows 不显示 USB 入口。由 Rust 后台管理单个串口，默认 115200 / 8N1 / 无流控，收发 UTF-8 文本行。
 
-布局约束：
+草图使用 `studioSerial.onLine(callback)`、`await studioSerial.writeLine(text)` 和只读 `studioSerial.connected`。必须在面板手动连接；打开、运行或导入项目均不自动连接、发送指令。同项目重新运行保留设备连接并清理旧订阅；离开编辑器、成功保存重命名、断开或关闭窗口会释放连接，取消离开保留连接。首期不改 meta.json，也不保存端口和自动连接设置。
 
-- **图库优先服务作业整理。** 分类、搜索、评分、收藏和导入导出保持主要位置；不在图库常驻串口选择、波特率或设备监视器。
-- **编辑器按需展开硬件工具。** 规划通过“更多工具 → ESP32”打开设备面板，默认关闭；大窗口可使用可收起的侧边抽屉，窗口较窄时使用底部面板，并与调试控制台切换显示，避免连续增加工具栏按钮或挤占代码与画布。
-- **小屏和手机不照搬桌面面板。** 若未来纳入手机端，使用独立工具页或全屏面板；USB 接入需另做平台与真机验证，不因桌面支持而承诺手机可用。
-- **硬件配置从属于项目。** 后续可随项目保存通信格式、固件源码与接线说明，但项目导入后不自动连接设备或发送指令。不使用 ESP32 时，原有归档、编辑和运行流程保持独立。
+两个匿名教学 ZIP 包包含 p5.js 代码、ESP32 固件源码、接线与协议，见 [示例](examples/README.md)。固件使用外部工具准备。实现、API、隔离限制和验收清单见 [ESP32 USB 文档](docs/esp32-usb.zh-CN.md)。
 
-第一阶段验收以真实开发板的双向通信、断线处理，以及未连接设备时普通作品仍可正常离线运行和归档为准。以上为后续规划，不代表当前安装包已有硬件支持。
+**当前为软件原型，完整实机验收仍待完成。基础 C3 串口连通反馈不能代替通用固件、按键、灯光与 RSSI 的整体验收。正式发布的 v1.3.2 安装包不包含新增功能；Actions 手动测试包沿用 1.3.2，以提交和运行编号区分。**
+
+PC 本次更新、验证范围和 Actions 下载方式见 [2026-10-30 更新说明](docs/pc-update-20261030.zh-CN.md)。手动运行 [Build & Release](https://github.com/kergee/P5JS-Studio/actions/workflows/build.yml)，默认只构建 Windows；成功后在该次运行的 Artifacts 下载 EXE/MSI。手动构建不创建正式 Release。
+
+后续顺序：先完成真实开发板双向通信、端口占用／拔线／重连及普通项目回归，再决定发布版本；Wi-Fi、多设备、手机 USB、固件编译与烧录均不包含在本期。手机端继续以整理归档和离线运行作品为主。
 
 参会材料见 [中文讲稿与演示步骤](docs/pcd2026-talk.zh-CN.md)。本次实现说明见 [1.3.0 变更记录](CHANGELOG.md)。
 

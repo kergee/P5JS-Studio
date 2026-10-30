@@ -22,6 +22,9 @@ zip = "2"
 base64 = "0.22"
 tempfile = "3"
 
+[target.'cfg(windows)'.dependencies]
+serialport = { version = "=4.10.1", default-features = false }
+
 [profile.release]
 panic = "abort"
 codegen-units = 1

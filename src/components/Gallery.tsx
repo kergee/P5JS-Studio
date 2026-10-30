@@ -1,3 +1,5 @@
+import { createPendingNotes } from "../lib/pendingNotes";
+import { pcWorkflowText } from "../lib/pcWorkflowText";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
@@ -25,6 +27,8 @@ interface GalleryProps {
   onPathChange: (path: string) => void;
 }
 
+const gallerySession = { query: "", favorite: false, rating: "all", scope: "all" as "all" | "folder", scroll: new Map<string, number>() };
+
 const emptyListing: DirectoryListing = { folders: [], sketches: [] };
 
 type PendingDelete =
@@ -51,23 +55,23 @@ function pathLabel(path: string, homeLabel: string) {
 }
 
 export default function Gallery({
-  onOpen,
+  onOpen: openProject,
   theme,
   onToggleTheme,
   language,
   onLanguageChange,
   currentPath,
-  onPathChange,
+  onPathChange: changePath,
 }: GalleryProps) {
   const { setSketches, addSketch, removeSketch } = useSketchStore();
   const [listing, setListing] = useState<DirectoryListing>(emptyListing);
   const [overview, setOverview] = useState<Record<string, SketchOverview>>({});
   const [overviewRevision, setOverviewRevision] = useState(0);
-  const [searchQuery, setSearchQuery] = useState("");
+  const [searchQuery, setSearchQuery] = useState(gallerySession.query);
   const [catalog, setCatalog] = useState<SketchSummary[]>([]);
-  const [favoritesOnly, setFavoritesOnly] = useState(false);
-  const [ratingFilter, setRatingFilter] = useState("all");
-  const [searchScope, setSearchScope] = useState<"all" | "folder">("all");
+  const [favoritesOnly, setFavoritesOnly] = useState(gallerySession.favorite);
+  const [ratingFilter, setRatingFilter] = useState(gallerySession.rating);
+  const [searchScope, setSearchScope] = useState<"all" | "folder">(gallerySession.scope);
   const [reviewPending, setReviewPending] = useState<Set<string>>(new Set());
   const reviewLocks = useRef(new Set<string>());
   const refreshGeneration = useRef(0);
@@ -95,6 +99,38 @@ export default function Gallery({
   const subtleButtonClass = light
     ? "text-gray-600 hover:text-gray-950 hover:bg-gray-100"
     : "text-gray-400 hover:text-white hover:bg-gray-700";
+
+  const pc = pcWorkflowText[language];
+  const [noteError, setNoteError] = useState("");
+  const [notesWriter] = useState(() => createPendingNotes(tauriApi.saveFolderNotes, (error) => setNoteError(String(error))));
+  const navigationLock = useRef(false);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  useEffect(() => { Object.assign(gallerySession, { query: searchQuery, favorite: favoritesOnly, rating: ratingFilter, scope: searchScope }); }, [searchQuery, favoritesOnly, ratingFilter, searchScope]);
+  useEffect(() => {
+    const frame = requestAnimationFrame(() => { if (scrollRef.current) scrollRef.current.scrollTop = gallerySession.scroll.get(currentPath) ?? 0; });
+    return () => cancelAnimationFrame(frame);
+  }, [currentPath, catalog]);
+  const flushNotes = async () => {
+    try { await notesWriter.flush(); setNoteError(""); return true; }
+    catch (error) { setNoteError(String(error)); return false; }
+  };
+  const navigate = async (action: () => void) => {
+    if (navigationLock.current) return;
+    navigationLock.current = true;
+    try { if (await flushNotes()) action(); }
+    finally { navigationLock.current = false; }
+  };
+  const onOpen = (name?: string) => { void navigate(() => openProject(name)); };
+  const onPathChange = (path: string) => { void navigate(() => changePath(path)); };
+  useEffect(() => {
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
+    getCurrentWebviewWindow().onCloseRequested((event) => {
+      event.preventDefault();
+      void navigate(() => { void getCurrentWebviewWindow().destroy().catch((error) => setOperationError(String(error))); });
+    }).then((cleanup) => { if (disposed) cleanup(); else unlisten = cleanup; }).catch((error) => setOperationError(String(error)));
+    return () => { disposed = true; unlisten?.(); notesWriter.dispose(); };
+  }, [notesWriter]);
 
   const refresh = useCallback(async () => {
     const generation = ++refreshGeneration.current;
@@ -125,23 +161,11 @@ export default function Gallery({
         setFolderNotes(notes);
         setFolderNotesLoadedPath(currentPath);
       })
-      .catch(() => {
-        if (cancelled) return;
-        setFolderNotes("");
-        setFolderNotesLoadedPath(currentPath);
-      });
+      .catch((error) => { if (!cancelled) setOperationError(String(error)); });
     return () => {
       cancelled = true;
     };
   }, [currentPath]);
-
-  useEffect(() => {
-    if (folderNotesLoadedPath !== currentPath) return;
-    const timer = window.setTimeout(() => {
-      void tauriApi.saveFolderNotes(currentPath, folderNotes);
-    }, 500);
-    return () => window.clearTimeout(timer);
-  }, [currentPath, folderNotes, folderNotesLoadedPath]);
 
   useEffect(() => {
     let disposed = false;
@@ -315,6 +339,7 @@ export default function Gallery({
   const hasItems = (!filtering && listing.folders.length > 0) || visibleSketches.length > 0;
   const moveSourceFolder = movingSketch ? parentPath(movingSketch) : "";
   const moveUnchanged = Boolean(movingSketch) && moveDestination === moveSourceFolder;
+  const noteFailure = noteError && <div role="alert" className="px-4 py-2 text-red-500 text-sm">{pc.noteFailed} {noteError} <button className="underline" onClick={() => void flushNotes()}>{pc.retry}</button></div>;
   const folderNotesPanel = (
     <section className={hasItems ? "mb-5" : "mb-10"}>
       <button
@@ -332,7 +357,8 @@ export default function Gallery({
       {showFolderNotes && (
         <textarea
           value={folderNotes}
-          onChange={(event) => setFolderNotes(event.target.value)}
+          disabled={folderNotesLoadedPath !== currentPath}
+          onChange={(event) => { setFolderNotes(event.target.value); notesWriter.schedule(currentPath, event.target.value); }}
           placeholder={t.addFolderNotesPlaceholder}
           rows={3}
           className={`w-full resize-y rounded border px-3 py-2 text-sm outline-none transition-colors ${
@@ -534,6 +560,7 @@ export default function Gallery({
         </>}
       </div>
       {busy && <p role="status" className="text-sm px-4 py-2">{w.working}</p>}
+      {noteFailure}
       {operationError && <p role="alert" className="text-red-500 text-sm px-4 py-2 select-text whitespace-pre-wrap">{operationError}</p>}
       {operationMessage && <p role="status" className="text-green-600 text-sm px-4 py-2 select-text break-all">{operationMessage}</p>}
       {showProjectImport && <ProjectImport currentPath={currentPath} language={language} theme={theme} onClose={() => setShowProjectImport(false)} onImported={refresh} />}
@@ -547,7 +574,7 @@ export default function Gallery({
         <div className="text-right"><button onClick={() => setShowSettings(false)}>{w.close}</button></div>
       </WorkflowDialog>}
       {hasItems ? (
-        <div className="flex-1 overflow-auto p-6">
+        <div ref={scrollRef} onScroll={(event) => { gallerySession.scroll.set(currentPath, event.currentTarget.scrollTop); }} className="flex-1 overflow-auto p-6">
           {!filtering && folderNotesPanel}
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5 gap-4">
             {!filtering && listing.folders.map((name) => (
@@ -629,7 +656,7 @@ export default function Gallery({
           </div>
         </div>
       ) : (
-        <div className="flex-1 overflow-auto p-6">
+        <div ref={scrollRef} onScroll={(event) => { gallerySession.scroll.set(currentPath, event.currentTarget.scrollTop); }} className="flex-1 overflow-auto p-6">
           {!filtering && folderNotesPanel}
           <div className={`flex min-h-80 items-center justify-center ${light ? "text-gray-500" : "text-gray-500"}`}>
             <div className="text-center">

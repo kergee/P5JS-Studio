@@ -1,4 +1,6 @@
 fn main() {
+    // The Windows executable embeds icons at build-script time, not only at bundle time.
+    println!("cargo:rerun-if-changed=icons");
     let p5_package = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../node_modules/p5/package.json");
     println!("cargo:rerun-if-changed={}", p5_package.display());

@@ -97,7 +97,7 @@ Sketch-local assets take priority over `public` assets with the same path. Suppo
 
 `p5.sound` is bundled and loaded by default, so sound sketches can use APIs such as `loadSound()` without extra setup.
 
-For other classic browser/global JavaScript libraries, edit the sketch's `meta.json` directly. Place the library file in the sketch folder or the shared `public` folder, then list the relative path in the `libraries` array:
+Manage other local classic browser/global scripts in Resources, or edit the sketch's `meta.json` directly. Place the library file in the sketch folder or the shared `public` folder, then list the relative path in the `libraries` array:
 
 ```json
 {
@@ -118,74 +118,17 @@ sketches/
       p5.play.js
 ```
 
-Libraries load in the listed order before your sketch code. Sketch-local libraries take priority over shared `public` libraries with the same path. Missing library paths are reported in the Debug Console.
+Libraries load in the listed order before your sketch code. Sketch-local libraries take priority over shared `public` libraries with the same path. Missing declared libraries are listed before running.
 
-This first version does not include a library manager UI. It supports local classic scripts that expose browser globals, not npm package installs, ES module imports, or automatic CDN downloads.
+The Resources panel manages local script declarations and their load order. It supports local classic scripts that expose browser globals, not npm package installs, ES module imports, or automatic CDN downloads.
 
-### Local ml5.js Models
+### Optional third-party compatibility
 
-ml5 examples can run offline when both the JavaScript library and the model files are stored in the sketch library paths. A common shared layout is:
+Third-party support serves archiving and offline reproduction of existing work. P5JS Studio loads local classic scripts through one shared workflow. It does not provide a dedicated machine-learning or 3D workbench, or promise compatibility with every library, model or version. Existing ml5 path compatibility is retained.
 
-```text
-sketches/
-  public/
-    libraries/
-      ml5.min.js
-      ml5-models/
-        sentiment_cnn_v1/
-          model.json
-          metadata.json
-          group1-shard1of1
-        ar_portrait_depth/
-          model.json
-          group1-shard1of3.bin
-        selfie_segmentation_general/
-          model.json
-          group1-shard1of1.bin
-```
+Use **Resources → Project dependencies (optional)** to select local JS files, change load order or remove declarations. Changes are saved with the project and apply on the next Run. Missing or unreadable declared scripts are listed before running. These checks do not execute libraries or prove that models, dynamic assets or online APIs work offline. Add files to the project first, or use existing shared public files.
 
-Then declare ml5 in the sketch `meta.json`:
-
-```json
-{
-  "files": ["sketch.js"],
-  "libraries": ["libraries/ml5.min.js"]
-}
-```
-
-For ml5 models that accept model URL options, point those options at local `model.json` files:
-
-```js
-const depth = await ml5.depthEstimation("ARPortraitDepth", {
-  depthModelUrl: "libraries/ml5-models/ar_portrait_depth/model.json",
-  segmentationModelUrl: "libraries/ml5-models/selfie_segmentation_general/model.json",
-  applySegmentationMask: false
-});
-```
-
-For MediaPipe-backed models such as FaceMesh or HandPose, keep the runtime on MediaPipe and set `solutionPath` to the local MediaPipe package folder:
-
-```js
-const faceMesh = await ml5.faceMesh({
-  runtime: "mediapipe",
-  maxFaces: 1,
-  flipHorizontal: true,
-  solutionPath: "libraries/mediapipe/face_mesh"
-});
-```
-
-For `ml5.sentiment()`, keep the model name as `"MovieReviews"` rather than passing a folder path. P5JS Studio redirects ml5's default `sentiment_cnn_v1` model URL to `libraries/ml5-models/sentiment_cnn_v1/` when those files exist locally:
-
-```js
-const sentiment = await ml5.sentiment("MovieReviews");
-const result = await sentiment.predict("I love this sketch");
-```
-
-For other ml5 models, use the same pattern: download the model's `model.json`, metadata files, and all weight shard files; preserve their relative filenames; put them under `public/libraries/ml5-models/<model-name>/`; then pass the local `model.json` through the ml5 option used by that model, such as `modelUrl`, `modelURL`, `detectorModelUrl`, `landmarkModelUrl`, or a model-specific URL option. If the model uses a MediaPipe solution package instead of TFJS weight shards, copy the whole MediaPipe package folder and use `solutionPath`.
-
-### Offline-first
-
-p5.js v1 and p5.sound are bundled into the app at build time through Vite raw imports, so sketches can run without an internet connection.
+See [optional local ml5 model configuration](docs/optional-ml5-models.en.md).
 
 ## Keyboard Shortcuts
 
@@ -352,7 +295,7 @@ function preload() {
 
 ### Use Libraries
 
-Put third-party `.js` files beside the sketch or in `public`, then add them to the sketch `meta.json` `libraries` array. Close the project editor, edit and save `meta.json`, then reopen and run the sketch. The listed libraries load before your sketch files and are included in ZIP backup and restore.
+Add third-party `.js` files to the project, declare and order them under Resources → Project dependencies (optional), then save and run. Shared public libraries can also be declared by closing the editor and editing the `libraries` array in `meta.json`. The listed libraries load before your sketch files and are included in ZIP backup and restore.
 
 ### Project Submission and Backups
 
@@ -382,23 +325,22 @@ The product remains focused on **collecting, organizing and archiving student pr
 
 - Autosave policy and classroom batch archive improvements.
 - p5.js 2.x completion and diagnostics.
-- Broader third-party library, model and cross-platform regression coverage.
+- Dependency completeness and offline reproduction checks. Keep ml5 / three.js as optional compatibility and examples; defer dedicated model management and 3D editing tools.
 - Optional online model API assistance for arbitrary HTML ZIP conversion, with a proposed diff and user confirmation. Validate structure, assets and actual execution independently; model output does not guarantee a working sketch.
 
-### ESP32 integration (planned, not implemented)
+### ESP32 USB serial (source prototype; hardware acceptance pending)
 
-1. **Phase one: USB serial communication.** Start with Windows desktop and one confirmed ESP32 board: port and baud-rate selection, connect/disconnect, line-based text or JSON exchange, sensor-driven p5.js output and commands sent from p5.js to the device. Handle busy ports, unplugging, reconnection, and connection cleanup when stopping or switching projects. Prepare firmware with external tools; firmware compilation and flashing are outside this phase.
-2. **Later: Wi-Fi communication.** After hardware validation of USB, evaluate local-network WebSocket communication, device address configuration and reconnection. Networking must not become a prerequisite for ordinary offline projects.
-3. **Further work: firmware compilation and flashing.** Evaluate toolchains, firmware management and flashing as a separate scope. Focus dedicated hardware support on ESP32; Raspberry Pi and Arduino boards are not currently planned.
+On Windows, open **More tools → ESP32** in the editor. Debug and ESP32 share the preview's bottom panel, initially one third of its height, resizable up to one half and collapsible. The gallery has no hardware controls; non-Windows platforms have no USB entry. Rust manages one serial connection in a background worker, using 115200 / 8N1 / no flow control by default and UTF-8 text lines.
 
-Layout constraints:
+Sketches use `studioSerial.onLine(callback)`, `await studioSerial.writeLine(text)` and read-only `studioSerial.connected`. Connections require a manual action in the panel. Opening, importing or running a project never automatically connects or sends commands. Re-running keeps the device connection and clears old subscriptions. Leaving the editor, saving a rename, disconnecting or closing releases it; cancelling navigation keeps it. No meta.json changes, saved port or auto-connect setting.
 
-- **Keep the gallery focused on coursework.** Categories, search, ratings, favorites and import/export retain priority. Do not add persistent serial-port controls, baud-rate selectors or a device monitor to the gallery.
-- **Show hardware tools on demand in the editor.** Plan a More tools → ESP32 entry with a panel closed by default. Use a collapsible side drawer on wide windows, or a bottom panel sharing space with the Debug Console on narrower windows. Avoid continually expanding the toolbar or crowding out code and the canvas.
-- **Adapt separately for small screens and phones.** Any future mobile integration should use a dedicated tool page or full-screen panel. Mobile USB support requires its own platform and device validation; desktop support does not imply mobile compatibility.
-- **Keep hardware configuration subordinate to the project.** Future project archives may include the communication format, firmware source and wiring notes. Importing a project must not automatically connect a device or send commands. Archiving, editing and running ordinary projects remain independent of ESP32.
+Two anonymous [teaching ZIPs](examples/README.md) include sketches, firmware sources, wiring and protocol notes. Prepare firmware externally. See the [USB implementation and acceptance guide](docs/esp32-usb.zh-CN.md) for details, API and isolation limitations.
 
-Phase-one acceptance requires real-board bidirectional communication and disconnect handling, plus regression checks that ordinary projects can still run offline and be archived without connected hardware. These are future plans, not capabilities of the current installer.
+**Software prototype; complete hardware acceptance remains pending. Basic C3 serial connectivity feedback does not establish acceptance of the universal firmware, buttons, LEDs or RSSI. Official v1.3.2 release installers do not include these additions. Manual Actions test packages keep version 1.3.2 and are identified by commit and run ID.**
+
+See the [2026-10-30 PC update notes](docs/pc-update-20261030.zh-CN.md) for changes and validation boundaries. Manually run [Build & Release](https://github.com/kergee/P5JS-Studio/actions/workflows/build.yml) to build Windows by default, then download the EXE/MSI from that run's Artifacts. Manual builds do not create a public Release.
+
+Complete real-board bidirectional communication, busy-port/unplug/reconnect and ordinary-project regression checks before deciding on a release. Wi-Fi, multiple devices, phone USB, firmware compilation and flashing remain deferred. Mobile remains focused on organizing and running projects offline.
 
 See the [Chinese talk and demo guide](docs/pcd2026-talk.zh-CN.md) and [1.3.0 changes](CHANGELOG.md).
 

@@ -1,0 +1,6 @@
+{
+  "files": ["sketch.js"],
+  "notes": "ESP32-C3 SuperMini 按键烟花 / BOOT Fireworks。每次按下 BOOT，板载蓝灯短亮约 150ms；USB 连接后触发一朵烟花，长按不重复。先用 Arduino IDE 上传 firmware/C3ButtonFireworks/C3ButtonFireworks.ino，再关闭 IDE，打开 更多工具 → ESP32，选择实际 COM 端口、115200 并连接。没有外部接线。蓝灯和按键效果待当前实机验证；README.md 含完整步骤。",
+  "libraries": [],
+  "p5Version": "1.11.13"
+}

@@ -1,0 +1,6 @@
+{
+  "files": ["sketch.js"],
+  "notes": "使用C3StudioBridge 1.1.0通用固件。USB手动连接115200后，在ESP32发送框输入scan，等待wifi_scan_done，再输入con:Wi-Fi名称。重名时用con:bssid=接入点地址，stop停止。RSSI通过USB串口传输；不连接Wi-Fi，不需要密码，不代表人体检测。BOOT仍触发烟花和蓝灯反馈，PING仍回复PONG。实机扫描效果待验证。",
+  "libraries": [],
+  "p5Version": "1.11.13"
+}

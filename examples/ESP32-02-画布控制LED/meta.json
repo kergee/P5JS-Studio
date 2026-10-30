@@ -1,0 +1,8 @@
+{
+  "files": [
+    "sketch.js"
+  ],
+  "notes": "ESP32-02-画布控制LED；匿名教学示例，软件原型，待实机验证。接线和协议见项目 README.md；固件需外部工具准备。",
+  "libraries": [],
+  "p5Version": "1.11.13"
+}
