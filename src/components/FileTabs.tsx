@@ -40,6 +40,8 @@ export default function FileTabs({
 
   return (
     <div
+      role="tablist"
+      aria-label={language === "zh-CN" ? "项目代码文件" : "Project code files"}
       className={`flex items-center gap-0.5 px-3 py-1.5 border-b overflow-x-auto shrink-0 ${
         light ? "bg-gray-100 border-gray-200" : "border-gray-700"
       }`}
@@ -48,6 +50,11 @@ export default function FileTabs({
       {files.map((f) => (
         <div
           key={f}
+          role="tab"
+          aria-label={f}
+          aria-selected={activeFile === f}
+          aria-disabled={disabled}
+          tabIndex={disabled ? -1 : 0}
           className={`flex items-center gap-1.5 px-3 py-1 rounded-t text-xs cursor-pointer select-none group transition-colors
             ${activeFile === f
               ? light
@@ -58,7 +65,8 @@ export default function FileTabs({
                 : "text-gray-400 hover:text-gray-200 hover:bg-gray-750"
             }`}
           style={activeFile !== f ? { background: "transparent" } : undefined}
-          onClick={() => onSwitch(f)}
+          onClick={() => { if (!disabled) onSwitch(f); }}
+          onKeyDown={(event) => { if (event.target === event.currentTarget && !disabled && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); onSwitch(f); } }}
         >
           <span>{f}</span>
           {files.length > 1 && !disabled && (

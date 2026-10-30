@@ -1,3 +1,10 @@
+import { historyField } from "@codemirror/commands";
+import type { ReactCodeMirrorRef } from "@uiw/react-codemirror";
+import { EditorView } from "@codemirror/view";
+import { draftKey, parseDraft, type EditorDraft } from "../lib/editorDraft";
+import { combineSources, locateSource } from "../lib/sourceLocations";
+import { pcWorkflowText } from "../lib/pcWorkflowText";
+import { checkProjectDependencies, dependencyText } from "../lib/projectDependencies";
 import { useState, useCallback, useEffect, useRef, type PointerEvent as ReactPointerEvent } from "react";
 import { save as saveDialog } from "@tauri-apps/plugin-dialog";
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -21,6 +28,8 @@ import { checkJavaScriptSyntax } from "../lib/syntaxCheck";
 import { tauriApi, SketchAssets, SketchFile } from "../lib/tauri";
 import { ColorTheme, isLightTheme } from "../lib/theme";
 import { useSketchStore } from "../store/useSketchStore";
+import { useSerial } from "../store/useSerial";
+import { serialText } from "../lib/serial";
 
 const MIN_EDITOR_FONT_SIZE = 10;
 const MAX_EDITOR_FONT_SIZE = 24;
@@ -93,15 +102,51 @@ export default function Editor({ initialName, onBack, theme, onToggleTheme, lang
   const [loaded, setLoaded] = useState(false);
   const [operationBusy, setBusy] = useState(false);
   const [resourceBusy, setResourceBusy] = useState(false);
-  const busy = operationBusy || resourceBusy;
+  const [draftCandidate, setDraftCandidate] = useState<EditorDraft | null>(null);
+  const [draftError, setDraftError] = useState("");
+  const [draftUnreadable, setDraftUnreadable] = useState(false);
+  const [draftBackedUp, setDraftBackedUp] = useState(false);
+  const draftChecked = useRef(false);
+  const busy = operationBusy || resourceBusy || !!draftCandidate || draftUnreadable;
   const [operationError, setOperationError] = useState("");
   const [operationMessage, setOperationMessage] = useState("");
   const [showResources, setShowResources] = useState(false);
+  const [showTools, setShowTools] = useState(false);
+  const toolsRef = useRef<HTMLDivElement>(null);
+  const [serialEnabled, setSerialEnabled] = useState(false);
+  const [serialOpenTrigger, setSerialOpenTrigger] = useState(0);
+  const serialSupported = /Windows/.test(navigator.userAgent);
+  const serial = useSerial(persistedName, serialEnabled && serialSupported);
+  const st = serialText[language];
+  useEffect(() => {
+    if (!showTools) return;
+    const outside = (event: PointerEvent) => { if (!toolsRef.current?.contains(event.target as Node)) setShowTools(false); };
+    const escape = (event: KeyboardEvent) => { if (event.key === "Escape") setShowTools(false); };
+    window.addEventListener("pointerdown", outside);
+    window.addEventListener("keydown", escape);
+    return () => { window.removeEventListener("pointerdown", outside); window.removeEventListener("keydown", escape); };
+  }, [showTools]);
   const [leaveAction, setLeaveAction] = useState<"gallery" | "window" | null>(null);
   const [runningVersion, setRunningVersion] = useState("");
   const savingRef = useRef(false);
   const operationRef = useRef(false);
   const w = workflowText(language);
+  const pc = pcWorkflowText[language];
+  const codeMirrorRef = useRef<ReactCodeMirrorRef>(null);
+  const fileSessions = useRef(new Map<string, { json: ReturnType<import("@codemirror/state").EditorState["toJSON"]>; top: number; left: number }>());
+  const pendingLocation = useRef<DebugMessage | null>(null);
+  const clearDraft = (project: string | null) => { localStorage.removeItem(draftKey(project)); setDraftBackedUp(false); };
+  const checkRecovery = (base: string, project: string | null) => {
+    try {
+      const raw = localStorage.getItem(draftKey(project));
+      if (raw) {
+        const candidate = parseDraft(raw);
+        if (JSON.stringify(candidate.content) !== base) setDraftCandidate(candidate);
+        else clearDraft(project);
+      }
+    } catch (error) { setDraftUnreadable(true); setDraftError(String(error)); }
+    draftChecked.current = true;
+  };
   const [formatMsg, setFormatMsg] = useState<string | null>(null);
   const [debugMessages, setDebugMessages] = useState<DebugMessage[]>([]);
   const [editorWidthPercent, setEditorWidthPercent] = useState(readStoredEditorWidthPercent);
@@ -127,18 +172,45 @@ export default function Editor({ initialName, onBack, theme, onToggleTheme, lang
 
   useEffect(() => {
     let cancelled = false;
-    if (!initialName) { setLoaded(true); return; }
+    if (!initialName) { checkRecovery(snapshot, null); setSavedSnapshot(snapshot); setLoaded(true); return; }
     Promise.all([tauriApi.getSketch(initialName), tauriApi.getSketchAssets(initialName)])
       .then(([data, nextAssets]) => {
         if (cancelled) return;
         const nextFiles = data.files.length ? data.files : [{ name: "sketch.js", code: "" }];
         setFiles(nextFiles); setActiveFile(nextFiles[0].name); setNotes(data.notes);
         setLibraries(data.libraries); setP5Version(data.p5Version); setAssets(nextAssets);
-        setSavedSnapshot(JSON.stringify({ name: initialName, files: nextFiles, notes: data.notes, libraries: data.libraries, p5Version: data.p5Version }));
+        const base = JSON.stringify({ name: initialName, files: nextFiles, notes: data.notes, libraries: data.libraries, p5Version: data.p5Version });
+        setSavedSnapshot(base);
+        checkRecovery(base, initialName);
         setLoaded(true);
       }).catch((e) => { if (!cancelled) setOperationError(String(e)); });
     return () => { cancelled = true; };
   }, [initialName]);
+
+  useEffect(() => {
+    if (!loaded || !draftChecked.current || draftCandidate || draftUnreadable || savedSnapshot === null) return;
+    if (!dirty) { try { clearDraft(persistedName); } catch (error) { setDraftError(String(error)); } return; }
+    try {
+      const draft: EditorDraft = { schema: 1, base: savedSnapshot, updatedAt: Date.now(), content: { name, files, notes, libraries, p5Version } };
+      localStorage.setItem(draftKey(persistedName), JSON.stringify(draft));
+      setDraftError(""); setDraftBackedUp(true);
+    } catch (error) { setDraftError(String(error)); setDraftBackedUp(false); }
+  }, [loaded, snapshot, savedSnapshot, persistedName, draftCandidate, draftUnreadable, dirty]);
+
+  const focusLocation = (message: DebugMessage) => {
+    const view = codeMirrorRef.current?.view;
+    if (!view || !message.line) return;
+    const line = view.state.doc.line(Math.max(1, Math.min(view.state.doc.lines, message.line)));
+    const position = Math.min(line.to, line.from + Math.max(0, (message.column ?? 1) - 1));
+    view.dispatch({ selection: { anchor: position }, effects: EditorView.scrollIntoView(position, { y: "center" }) });
+    view.focus();
+    pendingLocation.current = null;
+  };
+  const jumpToLocation = (message: DebugMessage) => {
+    if (!message.file || !files.some((file) => file.name === message.file)) return;
+    if (message.file === activeFile) focusLocation(message);
+    else { pendingLocation.current = message; setActiveFile(message.file); }
+  };
 
   const activeCode = files.find((f) => f.name === activeFile)?.code ?? "";
   const displayName = basename(name);
@@ -235,15 +307,17 @@ export default function Editor({ initialName, onBack, theme, onToggleTheme, lang
     setDebugMessages((messages) => [...messages, message].slice(-100));
   }, []);
 
-  const combinedCode = files.map((f) => f.code).join("\n");
+  const combinedCode = combineSources(files);
 
   const save = useCallback(async (withinOperation = false): Promise<boolean> => {
-    if (!loaded || savingRef.current || (operationRef.current && !withinOperation)) return false;
+    if (!loaded || draftCandidate || draftUnreadable || savingRef.current || (operationRef.current && !withinOperation)) return false;
     savingRef.current = true; setBusy(true); setOperationError(""); setOperationMessage("");
     try {
       await tauriApi.saveProject({ originalName: persistedName, name, files, notes, libraries, p5Version });
       if (persistedName && persistedName !== name) removeSketch(persistedName);
       addSketch(name); setPersistedName(name); setSavedSnapshot(snapshot);
+      try { clearDraft(persistedName); if (persistedName !== name) clearDraft(name); setDraftError(""); }
+      catch (error) { setDraftError(String(error)); }
       if (pendingThumbnail.current) {
         try { await tauriApi.saveThumbnail(name, pendingThumbnail.current); pendingThumbnail.current = null; }
         catch (e) { setOperationError(String(e)); }
@@ -251,9 +325,13 @@ export default function Editor({ initialName, onBack, theme, onToggleTheme, lang
       return true;
     } catch (e) { setOperationError(`${w.saveFailed}: ${String(e)}`); return false; }
     finally { savingRef.current = false; if (!operationRef.current) setBusy(false); }
-  }, [loaded, persistedName, name, files, notes, libraries, p5Version, snapshot, addSketch, removeSketch, w.saveFailed]);
+  }, [loaded, persistedName, name, files, notes, libraries, p5Version, snapshot, addSketch, removeSketch, w.saveFailed, draftCandidate, draftUnreadable]);
 
-  const refreshAssets = useCallback(async () => { setAssets(await tauriApi.getSketchAssets(name)); }, [name]);
+  const refreshAssets = useCallback(async () => {
+    const nextAssets = await tauriApi.getSketchAssets(name);
+    setAssets(nextAssets);
+    return nextAssets;
+  }, [name]);
   const exportProject = async () => {
     if (savingRef.current || operationRef.current || !loaded) return;
     operationRef.current = true; setBusy(true);
@@ -265,12 +343,18 @@ export default function Editor({ initialName, onBack, theme, onToggleTheme, lang
     } catch (e) { setOperationError(String(e)); } finally { operationRef.current = false; setBusy(false); }
   };
 
+  const leaveEditor = useCallback(async (action: "gallery" | "window") => {
+    try {
+      await serial.release();
+      if (action === "gallery") onBack(); else await getCurrentWindow().destroy();
+    } catch (error) { setOperationError(String(error)); }
+  }, [onBack, serial.release]);
+
   const requestLeave = useCallback((action: "gallery" | "window") => {
-    if (savingRef.current || operationRef.current || resourceBusy) return;
+    if (savingRef.current || operationRef.current || resourceBusy || draftCandidate || draftUnreadable) return;
     if (dirty) setLeaveAction(action);
-    else if (action === "gallery") onBack();
-    else void getCurrentWindow().destroy().catch((e) => setOperationError(String(e)));
-  }, [dirty, onBack, resourceBusy]);
+    else void leaveEditor(action);
+  }, [dirty, leaveEditor, resourceBusy, draftCandidate, draftUnreadable]);
   useEffect(() => {
     let disposed = false;
     let cleanup: (() => void) | undefined;
@@ -286,19 +370,25 @@ export default function Editor({ initialName, onBack, theme, onToggleTheme, lang
   }, [dirty]);
 
   const run = useCallback(async () => {
-    if (!loaded || savingRef.current || operationRef.current) return;
+    if (busy || !loaded || savingRef.current || operationRef.current) return;
     if (!getRuntime(p5Version)) { setOperationError(w.missingVersion); return; }
     operationRef.current = true; setBusy(true);
     try {
     if (!await save(true)) return;
-    await refreshAssets();
+    const nextAssets = await refreshAssets();
+    const unavailable = checkProjectDependencies(libraries, nextAssets).filter((entry) => entry.status !== "ready");
+    if (unavailable.length) {
+      const d = dependencyText[language];
+      setOperationError(`${d.blocked}\n${unavailable.map((entry) => `${entry.path}: ${d[entry.status]}`).join("\n")}`);
+      setShowResources(true);
+      return;
+    }
 
     const diagnostics = getRuntime(p5Version)?.major === 1 ? getJavaScriptDiagnostics(combinedCode) : [];
     const staticMessages: DebugMessage[] = diagnostics.map((diagnostic) => ({
       level: diagnostic.level === "error" ? "error" : "warn",
       message: diagnostic.message,
-      line: diagnostic.line,
-      column: diagnostic.column,
+      ...locateSource(files, diagnostic.line, diagnostic.column),
       timestamp: Date.now(),
     }));
     setDebugMessages(staticMessages);
@@ -308,8 +398,7 @@ export default function Editor({ initialName, onBack, theme, onToggleTheme, lang
       setDebugMessages([{
         level: "error",
         message: `SyntaxError: ${syntaxError.message}`,
-        line: syntaxError.line,
-        column: syntaxError.column,
+        ...locateSource(files, syntaxError.line, syntaxError.column),
         timestamp: Date.now(),
       }]);
       return;
@@ -319,7 +408,7 @@ export default function Editor({ initialName, onBack, theme, onToggleTheme, lang
     setRunTrigger((t) => t + 1);
     } catch (e) { setOperationError(String(e)); }
     finally { operationRef.current = false; setBusy(false); }
-  }, [loaded, combinedCode, save, p5Version, w.missingVersion, refreshAssets]);
+  }, [loaded, combinedCode, save, p5Version, w.missingVersion, refreshAssets, libraries, language, files, busy]);
 
   const handleThumbnail = useCallback((dataUrl: string) => {
     pendingThumbnail.current = dataUrl;
@@ -340,6 +429,7 @@ export default function Editor({ initialName, onBack, theme, onToggleTheme, lang
 
   const handleRemoveFile = useCallback(async (fileName: string) => {
 
+    fileSessions.current.delete(fileName);
     setFiles((prev) => {
       const next = prev.filter((f) => f.name !== fileName);
       if (activeFile === fileName) setActiveFile(next[0]?.name ?? "");
@@ -371,7 +461,7 @@ export default function Editor({ initialName, onBack, theme, onToggleTheme, lang
           ← {t.backToGallery}
         </button>
         <div className={`w-px h-4 ${light ? "bg-gray-200" : "bg-gray-600"}`} />
-        <div className="flex items-center gap-2 flex-1">
+        <div className="flex min-w-40 items-center gap-2 flex-1">
           {editingName ? (
             <input
               autoFocus
@@ -388,14 +478,14 @@ export default function Editor({ initialName, onBack, theme, onToggleTheme, lang
             />
           ) : (
             <button
-              className={`text-sm px-1 ${light ? "text-gray-700 hover:text-black" : "text-gray-300 hover:text-white"}`}
+              className={`min-w-0 max-w-64 truncate text-sm px-1 ${light ? "text-gray-700 hover:text-black" : "text-gray-300 hover:text-white"}`}
               onClick={startRename} disabled={busy || !loaded}
               title={t.clickToRename}
             >
               {displayName}
             </button>
           )}
-          <span role="status" className={`text-xs ${dirty ? "text-amber-500" : "text-green-600"}`}>{!loaded ? w.loading : busy ? w.saving : dirty ? w.unsaved : w.saved}</span>
+          <span role="status" className={`shrink-0 whitespace-nowrap text-xs ${dirty ? "text-amber-500" : "text-green-600"}`}>{!loaded ? w.loading : busy ? w.saving : dirty ? w.unsaved : w.saved}</span>
         </div>
         <label className="text-xs flex items-center gap-1">
           p5.js
@@ -421,6 +511,16 @@ export default function Editor({ initialName, onBack, theme, onToggleTheme, lang
           {notes ? `📝 ${t.notes}` : t.notes}
         </button>
         <ThemeToggle theme={theme} onToggle={onToggleTheme} language={language} />
+        {serialSupported && <div ref={toolsRef} className="relative shrink-0">
+          <button type="button" aria-expanded={showTools} onClick={() => setShowTools((value) => !value)}
+            className={`${subtleButtonClass} px-2 py-1.5 text-sm rounded`}>
+            {st.more}{serial.session && <span aria-label={st.connected} className="ml-1 text-green-500">●</span>}
+          </button>
+          {showTools && <div className={`absolute right-0 top-full z-30 min-w-32 border rounded p-1 shadow-lg ${light ? "bg-white border-gray-200" : "bg-gray-800 border-gray-600"}`}>
+            <button type="button" disabled={!loaded || busy} className={`${subtleButtonClass} block w-full px-3 py-2 text-left rounded`}
+              onClick={() => { setSerialEnabled(true); setSerialOpenTrigger((value) => value + 1); setShowTools(false); }}>ESP32</button>
+          </div>}
+        </div>}
         <button
           onClick={() => adjustFontSize(-1)}
           className={`${subtleButtonClass} px-2 py-1.5 rounded text-sm transition-colors`}
@@ -460,12 +560,14 @@ export default function Editor({ initialName, onBack, theme, onToggleTheme, lang
         </button>
       </div>
 
+      {draftError && <p role="alert" className="text-red-500 text-sm px-4 py-1">{pc.draftFailed}{draftError}</p>}
+      {draftBackedUp && dirty && <p role="status" className="text-xs opacity-70 px-4">{pc.draftSaved}</p>}
       {operationError && <p role="alert" className="text-red-500 text-sm px-4 py-2 whitespace-pre-wrap select-text">{operationError}</p>}
       {operationMessage && <p role="status" className="text-green-600 text-sm px-4 py-2 select-text">{operationMessage}</p>}
       {!getRuntime(p5Version) && <p className="text-amber-500 text-xs px-4 py-1">{w.missingVersion}</p>}
       {runningVersion && runningVersion !== p5Version && <p className="text-amber-500 text-xs px-4 py-1">{w.nextRun}</p>}
       {getRuntime(p5Version)?.major === 2 && <p className="text-xs opacity-70 px-4 py-1">{w.v2Hint}</p>}
-      {showResources && <ProjectResources name={name} theme={theme} language={language} ensureSaved={save} onAssetsChanged={refreshAssets} onBusyChange={setResourceBusy} />}
+      {showResources && <ProjectResources name={name} theme={theme} language={language} ensureSaved={save} onAssetsChanged={refreshAssets} onBusyChange={setResourceBusy} libraries={libraries} assets={assets} onLibrariesChange={setLibraries} codeFiles={files.map((file) => file.name)} disabled={operationBusy || !loaded} />}
       {/* File tabs */}
       <FileTabs
         files={files.map((f) => f.name)}
@@ -504,6 +606,11 @@ export default function Editor({ initialName, onBack, theme, onToggleTheme, lang
         <div
           className="min-w-0 shrink-0 overflow-hidden"
           style={{ width: `${editorWidthPercent}%` }}
+          onScrollCapture={() => {
+            const view = codeMirrorRef.current?.view;
+            const session = fileSessions.current.get(activeFile);
+            if (view && session) { session.top = view.scrollDOM.scrollTop; session.left = view.scrollDOM.scrollLeft; }
+          }}
           onWheel={(event) => {
             if (!event.ctrlKey) return;
             event.preventDefault();
@@ -512,6 +619,16 @@ export default function Editor({ initialName, onBack, theme, onToggleTheme, lang
         >
           <CodeMirror
             key={activeFile}
+            ref={codeMirrorRef}
+            initialState={fileSessions.current.has(activeFile) ? { json: fileSessions.current.get(activeFile)!.json, fields: { history: historyField } } : undefined}
+            onUpdate={(update) => {
+              fileSessions.current.set(activeFile, { json: update.state.toJSON({ history: historyField }), top: update.view.scrollDOM.scrollTop, left: update.view.scrollDOM.scrollLeft });
+            }}
+            onCreateEditor={(view) => {
+              const session = fileSessions.current.get(activeFile);
+              if (session) requestAnimationFrame(() => { if (view.dom.isConnected) { view.scrollDOM.scrollTop = session.top; view.scrollDOM.scrollLeft = session.left; view.focus(); } });
+              if (pendingLocation.current?.file === activeFile) requestAnimationFrame(() => { if (pendingLocation.current) focusLocation(pendingLocation.current); });
+            }}
             value={activeCode}
             readOnly={busy || !loaded}
             height="100%"
@@ -570,6 +687,12 @@ export default function Editor({ initialName, onBack, theme, onToggleTheme, lang
           style={{ width: `${100 - editorWidthPercent}%` }}
         >
           <Preview
+            serial={serial}
+            serialEnabled={serialEnabled && serialSupported}
+            serialOpenTrigger={serialOpenTrigger}
+            serialProject={persistedName}
+            sourceFiles={files}
+            onLocate={jumpToLocation}
             code={combinedCode}
             assets={assets}
             libraries={libraries}
@@ -585,18 +708,37 @@ export default function Editor({ initialName, onBack, theme, onToggleTheme, lang
         </div>
         {isResizing && <div className="fixed inset-0 z-50 cursor-col-resize" />}
       </div>
+      {(draftCandidate || draftUnreadable) && <WorkflowDialog title={pc.draftFound} theme={theme}>
+        <p>{pc.draftHint}</p>
+        {draftCandidate && <p className="my-2 text-sm">{new Date(draftCandidate.updatedAt).toLocaleString()}</p>}
+        {draftCandidate && draftCandidate.base !== savedSnapshot && <p role="alert" className="text-amber-500">{pc.conflict}</p>}
+        <div className="flex gap-3 mt-4">
+          <button disabled={!draftCandidate} className="bg-blue-600 text-white rounded px-3 py-2 disabled:opacity-50" onClick={() => {
+            if (!draftCandidate) return;
+            const recovered = draftCandidate.content;
+            setName(recovered.name); setFiles(recovered.files); setActiveFile(recovered.files[0].name);
+            setNotes(recovered.notes); setLibraries(recovered.libraries); setP5Version(recovered.p5Version);
+            fileSessions.current.clear(); setDraftCandidate(null); setDraftUnreadable(false); setDraftError("");
+          }}>{pc.restore}</button>
+          <button className="border rounded px-3 py-2" onClick={() => {
+            try { clearDraft(persistedName); setDraftCandidate(null); setDraftUnreadable(false); setDraftError(""); }
+            catch (error) { setDraftError(String(error)); }
+          }}>{pc.discard}</button>
+        </div>
+      </WorkflowDialog>}
       {leaveAction && <WorkflowDialog title={w.closeTitle} theme={theme}>
         <p>{w.closeHint}</p>
         <div className="flex justify-end gap-4 mt-5">
           <button disabled={busy} onClick={() => setLeaveAction(null)}>{w.cancel}</button>
           <button disabled={busy} onClick={() => {
+            try { clearDraft(persistedName); } catch (error) { setDraftError(String(error)); return; }
             const action = leaveAction; setLeaveAction(null);
-            if (action === "gallery") onBack(); else void getCurrentWindow().destroy().catch((e) => setOperationError(String(e)));
+            void leaveEditor(action);
           }}>{w.discard}</button>
           <button disabled={busy} className="bg-blue-600 text-white rounded px-3 py-2" onClick={async () => {
             if (!await save()) return;
             const action = leaveAction; setLeaveAction(null);
-            if (action === "gallery") onBack(); else await getCurrentWindow().destroy().catch((e) => setOperationError(String(e)));
+            await leaveEditor(action);
           }}>{w.saveLeave}</button>
         </div>
       </WorkflowDialog>}

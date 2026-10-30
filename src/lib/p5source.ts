@@ -1,5 +1,7 @@
+import { decodeLocalScript } from "./projectDependencies";
 import { LEGACY_P5_VERSION } from "./runtimes";
 import { getRuntimeSources } from "./runtimeSources";
+import { serialBootstrapSource, type SerialScope } from "./serialProtocol";
 
 type SketchAssets = Record<string, string>;
 type SketchLibraries = string[];
@@ -22,24 +24,6 @@ function resolveAssetDataUrl(path: string, assets: SketchAssets) {
   return assets[path] || assets[cleaned] || assets[`/${cleaned}`] || null;
 }
 
-function decodeDataUrl(dataUrl: string) {
-  if (!dataUrl.startsWith("data:")) return null;
-  const commaIndex = dataUrl.indexOf(",");
-  if (commaIndex === -1) return null;
-
-  const header = dataUrl.slice(0, commaIndex);
-  const body = dataUrl.slice(commaIndex + 1);
-  if (header.includes(";base64")) {
-    const binary = atob(body);
-    const bytes = new Uint8Array(binary.length);
-    for (let index = 0; index < binary.length; index += 1) {
-      bytes[index] = binary.charCodeAt(index);
-    }
-    return new TextDecoder().decode(bytes);
-  }
-  return decodeURIComponent(body);
-}
-
 function debugScript(message: string) {
   const json = JSON.stringify(message).replace(/<\//g, "<\\/");
   return `<script>window.__p5studioDebug('error', [${json}]);</script>`;
@@ -55,8 +39,8 @@ function buildLibraryScripts(libraries: SketchLibraries, assets: SketchAssets) {
         return debugScript(`Library not found: ${library}`);
       }
 
-      const source = decodeDataUrl(dataUrl);
-      if (source === null) {
+      let source: string;
+      try { source = decodeLocalScript(dataUrl); } catch {
         return debugScript(`Library could not be loaded as a local script: ${library}`);
       }
 
@@ -73,15 +57,18 @@ export function buildSrcdoc(
   userCode: string,
   assets: SketchAssets = {},
   libraries: SketchLibraries = [],
-  p5Version: string = LEGACY_P5_VERSION
+  p5Version: string = LEGACY_P5_VERSION,
+  serialScope: SerialScope = { owner: "", project: "", run: "" }
 ): string {
   const runtime = getRuntimeSources(p5Version);
   const assetJson = JSON.stringify(assets).replace(/<\//g, "<\\/");
   const libraryScripts = buildLibraryScripts(libraries, assets);
+  const serialSource = serialBootstrapSource(serialScope);
 
   return `<!DOCTYPE html>
 <html>
 <head>
+  <script>${escapeScript(serialSource)}</script>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     html, body { min-width: 100%; min-height: 100%; }
@@ -89,6 +76,38 @@ export function buildSrcdoc(
     canvas { display: block; }
   </style>
   <script>
+    // Explicitly release browser resources even if a sketch retains references outside its frame.
+    (function() {
+      var contexts = [], streams = [], disposed = false;
+      ['AudioContext', 'webkitAudioContext'].forEach(function(name) {
+        var Original = window[name];
+        if (!Original) return;
+        window[name] = new Proxy(Original, { construct: function(target, args) {
+          var context = Reflect.construct(target, args);
+          contexts.push(context);
+          return context;
+        }});
+      });
+      if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+        var getUserMedia = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
+        navigator.mediaDevices.getUserMedia = function(options) {
+          return getUserMedia(options).then(function(stream) {
+            if (disposed) stream.getTracks().forEach(function(track) { track.stop(); });
+            else streams.push(stream);
+            return stream;
+          });
+        };
+      }
+      function dispose() {
+        if (disposed) return;
+        disposed = true;
+        streams.forEach(function(stream) { stream.getTracks().forEach(function(track) { track.stop(); }); });
+        contexts.forEach(function(context) { if (context.state !== 'closed') context.close().catch(function() {}); });
+        contexts = []; streams = [];
+      }
+      window.addEventListener('pagehide', dispose);
+      window.addEventListener('unload', dispose);
+    })();
     (function() {
       function shortenDebugValue(value) {
         var text = String(value);
@@ -128,7 +147,7 @@ export function buildSrcdoc(
         }
       }
 
-      window.__p5studioDebug = function(level, args, line, column) {
+      window.__p5studioDebug = function(level, args, line, column, source) {
         try {
           window.parent.postMessage(
             {
@@ -136,7 +155,9 @@ export function buildSrcdoc(
               level: level,
               message: Array.prototype.slice.call(args).map(stringifyDebugValue).join(' '),
               line: line,
-              column: column
+              column: column,
+              source: source,
+              stack: args[0] && args[0].stack ? String(args[0].stack) : new Error().stack
             },
             '*'
           );
@@ -154,7 +175,7 @@ export function buildSrcdoc(
       });
     })();
     window.onerror = function(msg, _src, line, column, error) {
-      window.__p5studioDebug('error', [error || msg], line, column);
+      window.__p5studioDebug('error', [error || msg], line, column, _src);
       document.body.style.background = '#1a1a1a';
       document.body.innerHTML =
         '<pre style="color:#ff6b6b;padding:16px;font-size:13px;font-family:monospace;white-space:pre-wrap;">'
@@ -455,9 +476,7 @@ export function buildSrcdoc(
 
   </script>
   ${libraryScripts}
-  <script>
-    ${escapeScript(userCode)}
-  </script>
+  <script src="data:text/javascript;charset=utf-8,${escapeAttribute(encodeURIComponent(userCode + "\n//# sourceURL=studio-sketch.js"))}"></script>
   <script>
     (function() {
       function wrapSketchFunction(name) {

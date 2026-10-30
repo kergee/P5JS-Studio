@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager};
 mod projects;
 mod gallery;
+mod serial;
 
 // ── Data types ────────────────────────────────────────────────────────────────
 
@@ -1091,8 +1092,19 @@ mod tests {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .manage(serial::SerialManager::default())
+        .on_window_event(|window, event| {
+            if window.label() == "main" && matches!(event, tauri::WindowEvent::Destroyed) {
+                let app = window.app_handle().clone();
+                tauri::async_runtime::spawn_blocking(move || app.state::<serial::SerialManager>().close_all());
+            }
+        })
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
+            serial::serial_list_ports,
+            serial::serial_connect,
+            serial::serial_disconnect,
+            serial::serial_write_line,
             list_sketches,
             list_directory,
             list_folders,

@@ -7,13 +7,6 @@ const Editor = lazy(() => import("./components/Editor"));
 
 type View = { type: "gallery" } | { type: "editor"; name?: string };
 
-function parentPath(path?: string) {
-  if (!path) return "";
-  const parts = path.split("/").filter(Boolean);
-  parts.pop();
-  return parts.join("/");
-}
-
 export default function App() {
   const [view, setView] = useState<View>({ type: "gallery" });
   const [galleryPath, setGalleryPath] = useState("");
@@ -21,7 +14,6 @@ export default function App() {
   const [language, setLanguage] = useState<Language>(readStoredLanguage);
 
   const openEditor = (name?: string) => {
-    if (name) setGalleryPath(parentPath(name));
     setView({ type: "editor", name });
   };
   const openGallery = () => setView({ type: "gallery" });

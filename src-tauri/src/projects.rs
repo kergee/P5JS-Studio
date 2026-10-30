@@ -430,6 +430,27 @@ mod tests {
     }
 
     #[test]
+    fn esp32_examples_archive_firmware_without_hardware_metadata() {
+        let temp = tempfile::tempdir().unwrap();
+        let base = temp.path().join("base"); fs::create_dir(&base).unwrap();
+        let examples = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../examples");
+        for (name, firmware) in [("ESP32-01-传感器控制画面", "firmware/sensor/sensor.ino"), ("ESP32-02-画布控制LED", "firmware/led/led.ino")] {
+            let zip = examples.join(format!("{name}.zip"));
+            let imported = import_project_into(&base, zip.to_str().unwrap(), "演示班", false).unwrap().unwrap();
+            let files = project_archive(&base, &imported).unwrap();
+            assert_eq!(files[firmware], fs::read(examples.join(name).join(firmware)).unwrap());
+            assert_eq!(files["README.md"], fs::read(examples.join(name).join("README.md")).unwrap());
+            let meta: serde_json::Value = serde_json::from_slice(&files["meta.json"]).unwrap();
+            assert_eq!(meta["p5Version"], "1.11.13");
+            assert!(meta.get("serial").is_none()); assert!(meta.get("port").is_none());
+            let output = temp.path().join(format!("{name}-roundtrip.zip"));
+            write_zip(output.to_str().unwrap(), &files).unwrap();
+            let restored = import_project_into(&base, output.to_str().unwrap(), "另一班", false).unwrap().unwrap();
+            assert_eq!(project_archive(&base, &restored).unwrap(), files);
+        }
+    }
+
+    #[test]
     fn reviews_survive_editor_save_rename_and_archive_roundtrip() {
         let temp = tempfile::tempdir().unwrap();
         let base = temp.path().join("base"); fs::create_dir(&base).unwrap();
@@ -486,8 +507,11 @@ mod tests {
         fs::create_dir_all(base.join("public/libraries")).unwrap();
         fs::write(base.join("public/shared.wav"), b"shared sound").unwrap();
         fs::write(base.join("public/libraries/custom.js"), b"var library = true;").unwrap();
+        fs::create_dir_all(base.join("班级/第一次/ABC/libraries")).unwrap();
+        fs::write(base.join("班级/第一次/ABC/libraries/second.js"), b"var second = library;").unwrap();
         let mut meta = read_meta(&base.join("班级/第一次/ABC"));
         meta.libraries.push("libraries/custom.js".into());
+        meta.libraries.push("libraries/second.js".into());
         write_meta(&base.join("班级/第一次/ABC"), &meta).unwrap();
         let files = project_archive(&base, "班级/第一次/ABC").unwrap();
         assert_eq!(files["shared.wav"], b"shared sound");
@@ -498,6 +522,7 @@ mod tests {
         let mut reloaded = BTreeMap::new(); collect_files(&dest.join("班级/第一次/ABC"), "", &mut reloaded).unwrap();
         assert_eq!(files, reloaded);
         assert_eq!(read_meta(&dest.join("班级/第一次/ABC")).p5_version, "1.11.13");
+        assert_eq!(read_meta(&dest.join("班级/第一次/ABC")).libraries, vec!["libraries/custom.js", "libraries/second.js"]);
         assert_eq!(import_project_into(&dest, zip.to_str().unwrap(), "班级/第一次", false).unwrap(), Some("班级/第一次/ABC (2)".into()));
         assert_eq!(import_project_into(&dest, zip.to_str().unwrap(), "班级/第一次", true).unwrap(), None);
         assert_eq!(fs::read(dest.join("班级/第一次/ABC/assets/图片.png")).unwrap(), b"local image");

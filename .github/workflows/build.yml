@@ -5,6 +5,12 @@ on:
     tags:
       - "v*"
   workflow_dispatch:
+    inputs:
+      platform:
+        description: Build Windows only or all desktop platforms
+        type: choice
+        options: [windows, all]
+        default: windows
 
 permissions:
   contents: write
@@ -14,13 +20,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - platform: macos-latest
-            args: --target universal-apple-darwin
-          - platform: windows-latest
-            args: --bundles msi
+        include: ${{ fromJSON(github.event_name == 'workflow_dispatch' && inputs.platform == 'windows' && '[{"platform":"windows-latest","args":"--bundles nsis,msi"}]' || '[{"platform":"macos-latest","args":"--target universal-apple-darwin"},{"platform":"windows-latest","args":"--bundles nsis,msi"}]') }}
 
     runs-on: ${{ matrix.platform }}
+    timeout-minutes: 45
 
     steps:
       - uses: actions/checkout@v5
@@ -45,7 +48,27 @@ jobs:
       - name: Install npm dependencies
         run: npm ci
 
-      - name: Build and release
+      - name: Test frontend logic
+        run: npm test
+
+      - name: Test Rust backend
+        run: cargo test --manifest-path src-tauri/Cargo.toml --locked
+
+      - name: Install headless Chromium
+        if: matrix.platform == 'windows-latest'
+        run: npx playwright install chromium
+
+      - name: Test PC workflows without a desktop window
+        if: matrix.platform == 'windows-latest'
+        shell: pwsh
+        run: ./scripts/test-pc-headless.ps1
+
+      - name: Build test packages (manual run, no release)
+        if: github.event_name == 'workflow_dispatch'
+        run: npm run tauri -- build ${{ matrix.args }}
+
+      - name: Build and publish tagged release
+        if: startsWith(github.ref, 'refs/tags/v')
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -55,7 +78,41 @@ jobs:
           releaseBody: |
             ## Downloads
             - **macOS** (Universal — Intel + Apple Silicon): `.dmg`
-            - **Windows**: `.msi` installer
+            - **Windows x64**: `.exe` or `.msi` installer (choose one)
+
+            Changes: https://github.com/kergee/P5JS-Studio/blob/main/CHANGELOG.md
           releaseDraft: false
           prerelease: false
           args: ${{ matrix.args }}
+
+      - name: Collect Windows installers and checksums
+        if: matrix.platform == 'windows-latest'
+        shell: pwsh
+        run: ./scripts/collect-windows-package.ps1
+
+      - name: Upload Windows test installers
+        if: matrix.platform == 'windows-latest'
+        uses: actions/upload-artifact@v7
+        with:
+          name: P5JS-Studio-Windows-${{ github.sha }}
+          path: artifacts/ci-package/
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload macOS test installers
+        if: matrix.platform == 'macos-latest'
+        uses: actions/upload-artifact@v7
+        with:
+          name: P5JS-Studio-macOS-${{ github.sha }}
+          path: src-tauri/target/**/bundle/dmg/*.dmg
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload Windows test diagnostics
+        if: always() && matrix.platform == 'windows-latest'
+        uses: actions/upload-artifact@v7
+        with:
+          name: PC-workflow-checks-${{ github.sha }}
+          path: artifacts/validation/pc-workflow/
+          if-no-files-found: warn
+          retention-days: 14
