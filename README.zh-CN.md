@@ -235,7 +235,7 @@ src-tauri/target/release/bundle/
 该工作流会构建以下平台的发布文件：
 
 - macOS 通用二进制。
-- Windows MSI 安装包。
+- Windows EXE 安装包（NSIS），不再生成 MSI。
 
 有两种触发方式：
 
@@ -338,7 +338,7 @@ Windows 编辑器通过 **更多工具 → ESP32** 按需打开。底部“调�
 
 **当前为软件原型，完整实机验收仍待完成。基础 C3 串口连通反馈不能代替通用固件、按键、灯光与 RSSI 的整体验收。正式发布的 v1.3.2 安装包不包含新增功能；Actions 手动测试包沿用 1.3.2，以提交和运行编号区分。**
 
-PC 本次更新、验证范围和 Actions 下载方式见 [2026-10-30 更新说明](docs/pc-update-20261030.zh-CN.md)。手动运行 [Build & Release](https://github.com/kergee/P5JS-Studio/actions/workflows/build.yml)，默认只构建 Windows；成功后在该次运行的 Artifacts 下载 EXE/MSI。手动构建不创建正式 Release。
+PC 目录切换修复、验证范围和 Actions 下载方式见 [2026-10-31 更新说明](docs/pc-update-20261031.zh-CN.md)。手动运行 [Build & Release](https://github.com/kergee/P5JS-Studio/actions/workflows/build.yml)，默认只构建 Windows；成功后在该次运行的 Artifacts 下载 EXE。手动构建不创建正式 Release。Windows 本地构建通过 `src-tauri/tauri.windows.conf.json` 默认只生成 NSIS 安装包，macOS 构建目标保持原样。
 
 后续顺序：先完成真实开发板双向通信、端口占用／拔线／重连及普通项目回归，再决定发布版本；Wi-Fi、多设备、手机 USB、固件编译与烧录均不包含在本期。手机端继续以整理归档和离线运行作品为主。
 

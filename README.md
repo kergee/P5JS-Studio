@@ -235,7 +235,7 @@ This repository includes `.github/workflows/build.yml`.
 The workflow builds release artifacts for:
 
 - macOS universal binary.
-- Windows MSI installer.
+- Windows EXE installer (NSIS). Windows builds no longer generate MSI packages.
 
 You can trigger it in two ways:
 
@@ -338,7 +338,7 @@ Two anonymous [teaching ZIPs](examples/README.md) include sketches, firmware sou
 
 **Software prototype; complete hardware acceptance remains pending. Basic C3 serial connectivity feedback does not establish acceptance of the universal firmware, buttons, LEDs or RSSI. Official v1.3.2 release installers do not include these additions. Manual Actions test packages keep version 1.3.2 and are identified by commit and run ID.**
 
-See the [2026-10-30 PC update notes](docs/pc-update-20261030.zh-CN.md) for changes and validation boundaries. Manually run [Build & Release](https://github.com/kergee/P5JS-Studio/actions/workflows/build.yml) to build Windows by default, then download the EXE/MSI from that run's Artifacts. Manual builds do not create a public Release.
+See the [2026-10-31 directory-switch update notes](docs/pc-update-20261031.zh-CN.md) for changes and validation boundaries. Manually run [Build & Release](https://github.com/kergee/P5JS-Studio/actions/workflows/build.yml) to build Windows by default, then download the EXE from that run's Artifacts. Manual builds do not create a public Release. Windows local builds also default to NSIS through `src-tauri/tauri.windows.conf.json`; macOS builds keep their existing targets.
 
 Complete real-board bidirectional communication, busy-port/unplug/reconnect and ordinary-project regression checks before deciding on a release. Wi-Fi, multiple devices, phone USB, firmware compilation and flashing remain deferred. Mobile remains focused on organizing and running projects offline.
 

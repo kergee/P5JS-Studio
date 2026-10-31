@@ -19,7 +19,7 @@ await context.addInitScript(() => {
   const seed = { files: [{ name: 'sketch.js', code: 'function setup() { createCanvas(200, 160); }\nfunction draw() { background(20); }' }, { name: 'helper.js', code: '// helper\nvar helper = 1;' }], notes: '', libraries: [], p5Version: '1.11.13', thumbnail: null };
   const projects = JSON.parse(localStorage.getItem('fixture:projects') || 'null') || { 'Class/A': seed };
   const events = new Map(), callbacks = new Map(); let next = 0;
-  const fixture = window.__fixture = { projects, calls: [], noteFail: false, noteDelay: 0, closed: false, requestClose() {
+  const fixture = window.__fixture = { projects, calls: [], noteFail: false, noteDelay: 0, holdDirectory: false, pendingDirectories: [], closed: false, requestClose() {
     for (const [id, item] of events) if (item.event === 'tauri://close-requested') callbacks.get(item.handler)?.({event:item.event,id,payload:null});
   }};
   window.__TAURI_EVENT_PLUGIN_INTERNALS__ = { unregisterListener(_event,id) { events.delete(id); } };
@@ -28,7 +28,10 @@ await context.addInitScript(() => {
     transformCallback(fn) { callbacks.set(++next, fn); return next; }, unregisterCallback(id) {callbacks.delete(id);},
     async invoke(cmd,args={}) {
       fixture.calls.push({cmd,args});
-      if(cmd==='list_directory')return {folders:args.path===''?['Class']:[],sketches:args.path==='Class'?['Class/A']:[]};
+      if(cmd==='list_directory') {
+        if(fixture.holdDirectory && args.path) await new Promise((resolve,reject)=>fixture.pendingDirectories.push({path:args.path,resolve,reject}));
+        return {folders:args.path===''?['Class']:args.path==='Class'?['Nested']:[],sketches:args.path==='Class'?['Class/A']:[]};
+      }
       if(cmd==='list_sketch_summaries')return Array.from({length:35},(_,i)=>({path:i?'Class/Example'+i:'Class/A',notes:'blue',rating:5,favorite:true}));
       if(cmd==='get_sketch_overviews')return Object.fromEntries(args.names.map(name=>[name,{notes:'blue',thumbnail:null}]));
       if(cmd==='get_folder_notes')return localStorage.getItem('fixture:note:'+args.path)||'';
@@ -205,6 +208,60 @@ try {
     await matrix.close();
   }
   check('12 headless layouts: two languages, two themes, three sizes; p5.js 2.x run and stop');
+
+  const navigation = await context.newPage();
+  await navigation.goto(process.env.PC_WORKFLOW_URL || 'http://127.0.0.1:1424/');
+  const folder = name => navigation.getByRole('button',{name:'Open folder: '+name,exact:true});
+  await folder('Class').waitFor();
+  await navigation.evaluate(()=>{window.__fixture.holdDirectory=true;});
+  await folder('Class').click();
+  await navigation.waitForFunction(()=>window.__fixture.pendingDirectories.length===1);
+  assert.equal(await folder('Class').count(),0,'old directory cards must disappear while loading');
+  assert.equal(await navigation.getByRole('button',{name:'Edit: A',exact:true}).count(),0);
+  await navigation.getByRole('status').filter({hasText:'Loading folder'}).waitFor();
+  await navigation.getByRole('button',{name:'Home',exact:true}).click();
+  await folder('Class').waitFor();
+  await navigation.evaluate(()=>window.__fixture.pendingDirectories.shift().reject('late old request failure'));
+  // Round-trip through the event loop so a late rejection has time to reach React.
+  await navigation.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
+  assert.equal(await navigation.getByRole('alert').count(),0,'old rejected request cannot contaminate the new directory');
+  assert.equal(await folder('Class').count(),1);
+  check('directory switch hides old cards immediately; returning Home ignores a late failed request');
+
+  await folder('Class').click();
+  await navigation.waitForFunction(()=>window.__fixture.pendingDirectories.length===1);
+  await navigation.evaluate(()=>window.__fixture.pendingDirectories.shift().reject('simulated missing folder (os error 3)'));
+  await navigation.getByRole('alert').filter({hasText:'simulated missing folder'}).waitFor();
+  assert.equal(await folder('Class').count(),0,'failed directory cannot leave the previous cards clickable');
+  assert.equal(await navigation.getByRole('button',{name:'Edit: A',exact:true}).count(),0);
+  await navigation.getByRole('button',{name:'Reload folder',exact:true}).click();
+  await navigation.waitForFunction(()=>window.__fixture.pendingDirectories.length===1);
+  await navigation.evaluate(()=>window.__fixture.pendingDirectories.shift().resolve());
+  await folder('Nested').waitFor();
+  assert.equal(await navigation.getByRole('alert').count(),0,'successful retry clears the directory error');
+  await navigation.getByRole('button',{name:'Edit: A',exact:true}).waitFor();
+  check('failed directory is empty with retry; successful retry restores its own cards and clears the error');
+
+  await folder('Nested').click();
+  await navigation.waitForFunction(()=>window.__fixture.pendingDirectories.length===1);
+  assert.equal(await navigation.getByRole('button',{name:'Edit: A',exact:true}).count(),0,'previous project cards are hidden too');
+  await navigation.getByRole('button',{name:'Home',exact:true}).click();
+  await folder('Class').waitFor();
+  await navigation.evaluate(()=>window.__fixture.pendingDirectories.shift().resolve());
+  await navigation.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
+  assert.equal(await folder('Class').count(),1,'late success cannot replace the current Home listing');
+  assert.equal(await folder('Nested').count(),0);
+  assert.equal(await navigation.evaluate(()=>window.__fixture.calls.some(call=>call.cmd==='list_directory'&&call.args.path==='Class/Class')),false);
+
+  await folder('Class').click();
+  await navigation.waitForFunction(()=>window.__fixture.pendingDirectories.length===1);
+  await navigation.evaluate(()=>window.__fixture.pendingDirectories.shift().reject('second missing folder'));
+  await navigation.getByRole('alert').waitFor();
+  await navigation.getByRole('button',{name:'Home',exact:true}).click();
+  await folder('Class').waitFor();
+  assert.equal(await navigation.getByRole('alert').count(),0,'opening Home after an error clears the old alert');
+  await navigation.close();
+  check('late success cannot replace the current folder; opening Home clears an earlier directory error');
   success = true;
 } catch(error) {
   console.error((await page.locator('body').innerText()).slice(0,3000));
