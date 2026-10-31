@@ -64,7 +64,10 @@ export default function Gallery({
   onPathChange: changePath,
 }: GalleryProps) {
   const { setSketches, addSketch, removeSketch } = useSketchStore();
-  const [listing, setListing] = useState<DirectoryListing>(emptyListing);
+  const [listingSnapshot, setListingSnapshot] = useState<{ path: string; data: DirectoryListing } | null>(null);
+  const [directoryLoad, setDirectoryLoad] = useState<{ path: string; phase: "loading" | "ready" | "error"; error: string }>({ path: currentPath, phase: "loading", error: "" });
+  const directoryReady = directoryLoad.path === currentPath && directoryLoad.phase === "ready" && listingSnapshot?.path === currentPath;
+  const listing = directoryReady ? listingSnapshot.data : emptyListing;
   const [overview, setOverview] = useState<Record<string, SketchOverview>>({});
   const [overviewRevision, setOverviewRevision] = useState(0);
   const [searchQuery, setSearchQuery] = useState(gallerySession.query);
@@ -86,6 +89,7 @@ export default function Gallery({
   const [duplicateError, setDuplicateError] = useState<string | null>(null);
   const [folderNotes, setFolderNotes] = useState("");
   const [folderNotesLoadedPath, setFolderNotesLoadedPath] = useState<string | null>(null);
+  const [folderNotesReadError, setFolderNotesReadError] = useState<{ path: string; error: string } | null>(null);
   const [showFolderNotes, setShowFolderNotes] = useState(false);
   const [showProjectImport, setShowProjectImport] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
@@ -121,7 +125,13 @@ export default function Gallery({
     finally { navigationLock.current = false; }
   };
   const onOpen = (name?: string) => { void navigate(() => openProject(name)); };
-  const onPathChange = (path: string) => { void navigate(() => changePath(path)); };
+  const onPathChange = (path: string) => { void navigate(() => {
+    if (path === currentPath) return;
+    // Invalidate old requests before the new path renders, including rejected ones.
+    refreshGeneration.current++;
+    setOperationError(""); setOperationMessage("");
+    changePath(path);
+  }); };
   useEffect(() => {
     let disposed = false;
     let unlisten: (() => void) | undefined;
@@ -134,25 +144,33 @@ export default function Gallery({
 
   const refresh = useCallback(async () => {
     const generation = ++refreshGeneration.current;
-    const [nextListing, summaries] = await Promise.all([
-      tauriApi.listDirectory(currentPath),
-      tauriApi.listSketchSummaries(),
-    ]);
-    if (generation !== refreshGeneration.current) return;
-    setListing(nextListing);
-    setSketches(summaries.map((item) => item.path));
-    setCatalog(summaries);
-    setOverviewRevision((revision) => revision + 1);
+    setDirectoryLoad({ path: currentPath, phase: "loading", error: "" });
+    try {
+      const [nextListing, summaries] = await Promise.all([
+        tauriApi.listDirectory(currentPath),
+        tauriApi.listSketchSummaries(),
+      ]);
+      if (generation !== refreshGeneration.current) return;
+      setListingSnapshot({ path: currentPath, data: nextListing });
+      setSketches(summaries.map((item) => item.path));
+      setCatalog(summaries);
+      setOverviewRevision((revision) => revision + 1);
+      setDirectoryLoad({ path: currentPath, phase: "ready", error: "" });
+    } catch (error) {
+      if (generation !== refreshGeneration.current) return;
+      setDirectoryLoad({ path: currentPath, phase: "error", error: String(error) });
+    }
   }, [currentPath, setSketches]);
 
   useEffect(() => {
-    void refresh().catch((e) => setOperationError(String(e)));
+    void refresh();
     return () => { refreshGeneration.current++; };
   }, [refresh]);
 
   useEffect(() => {
     let cancelled = false;
     setFolderNotesLoadedPath(null);
+    setFolderNotesReadError(null);
     setFolderNotes("");
     tauriApi
       .getFolderNotes(currentPath)
@@ -161,7 +179,7 @@ export default function Gallery({
         setFolderNotes(notes);
         setFolderNotesLoadedPath(currentPath);
       })
-      .catch((error) => { if (!cancelled) setOperationError(String(error)); });
+      .catch((error) => { if (!cancelled) setFolderNotesReadError({ path: currentPath, error: String(error) }); });
     return () => {
       cancelled = true;
     };
@@ -308,10 +326,10 @@ export default function Gallery({
   };
 
   const filtering = Boolean(searchQuery.trim()) || favoritesOnly || ratingFilter !== "all";
-  const visibleSketches = useMemo(() => filterSketches(catalog, {
+  const visibleSketches = useMemo(() => directoryReady ? filterSketches(catalog, {
     query: searchQuery, favoritesOnly, rating: ratingFilter,
     scope: filtering ? searchScope : "folder", currentPath,
-  }), [catalog, searchQuery, favoritesOnly, ratingFilter, filtering, searchScope, currentPath]);
+  }) : [], [directoryReady, catalog, searchQuery, favoritesOnly, ratingFilter, filtering, searchScope, currentPath]);
   const visiblePaths = JSON.stringify(visibleSketches.map((item) => item.path));
   useEffect(() => {
     let cancelled = false;
@@ -320,7 +338,7 @@ export default function Gallery({
       if (!cancelled) setOverview(items);
     }).catch((error) => { if (!cancelled) setOperationError(String(error)); });
     return () => { cancelled = true; };
-  }, [visiblePaths, overviewRevision]);
+  }, [visiblePaths, overviewRevision, currentPath]);
 
   const updateReview = async (path: string, review: { rating?: number; favorite?: boolean }) => {
     if (reviewLocks.current.has(path)) return;
@@ -561,6 +579,11 @@ export default function Gallery({
       </div>
       {busy && <p role="status" className="text-sm px-4 py-2">{w.working}</p>}
       {noteFailure}
+      {directoryLoad.path === currentPath && directoryLoad.phase === "error" && <div role="alert" className="text-red-500 text-sm px-4 py-2 select-text break-words">
+        {pc.directoryFailed} {pathLabel(currentPath, t.home)}: {directoryLoad.error}{" "}
+        <button className="underline" onClick={() => void refresh()}>{pc.directoryRetry}</button>
+      </div>}
+      {folderNotesReadError?.path === currentPath && <p role="alert" className="text-red-500 text-sm px-4 py-2 select-text break-words">{folderNotesReadError.error}</p>}
       {operationError && <p role="alert" className="text-red-500 text-sm px-4 py-2 select-text whitespace-pre-wrap">{operationError}</p>}
       {operationMessage && <p role="status" className="text-green-600 text-sm px-4 py-2 select-text break-all">{operationMessage}</p>}
       {showProjectImport && <ProjectImport currentPath={currentPath} language={language} theme={theme} onClose={() => setShowProjectImport(false)} onImported={refresh} />}
@@ -573,7 +596,11 @@ export default function Gallery({
         </label><p className="text-sm opacity-70 my-3">{w.defaultHint}</p>
         <div className="text-right"><button onClick={() => setShowSettings(false)}>{w.close}</button></div>
       </WorkflowDialog>}
-      {hasItems ? (
+      {!directoryReady ? (
+        <div className="flex-1 p-6" aria-busy={directoryLoad.path !== currentPath || directoryLoad.phase === "loading"}>
+          {(directoryLoad.path !== currentPath || directoryLoad.phase === "loading") && <p role="status" className="text-sm opacity-70">{pc.directoryLoading}</p>}
+        </div>
+      ) : hasItems ? (
         <div ref={scrollRef} onScroll={(event) => { gallerySession.scroll.set(currentPath, event.currentTarget.scrollTop); }} className="flex-1 overflow-auto p-6">
           {!filtering && folderNotesPanel}
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5 gap-4">
@@ -587,6 +614,7 @@ export default function Gallery({
                 }`}
               >
                 <button
+                  aria-label={`${pc.openFolder}: ${name}`}
                   onClick={() => onPathChange(joinPath(currentPath, name))}
                   className={`h-32 w-full flex items-center justify-center ${
                     light ? "bg-amber-50 text-amber-700" : "bg-amber-950 text-amber-300"
