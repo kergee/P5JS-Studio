@@ -24,6 +24,8 @@ await context.addInitScript(() => {
   const events = new Map(), callbacks = new Map(); let next = 0;
   const fixture = window.__fixture = { projects, calls: [], noteFail: false, noteDelay: 0, holdDirectory: false, pendingDirectories: [], closed: false, requestClose() {
     for (const [id, item] of events) if (item.event === 'tauri://close-requested') callbacks.get(item.handler)?.({event:item.event,id,payload:null});
+  }, dropFiles(paths) {
+    for (const [id, item] of events) if (item.event === 'tauri://drag-drop') callbacks.get(item.handler)?.({event:item.event,id,payload:{paths,position:{x:20,y:150}}});
   }};
   window.__TAURI_EVENT_PLUGIN_INTERNALS__ = { unregisterListener(_event,id) { events.delete(id); } };
   window.__TAURI_INTERNALS__ = {
@@ -47,7 +49,18 @@ await context.addInitScript(() => {
       if(cmd==='get_sketch_assets')return fixture.htmlAssets || {};
       if(cmd==='save_project'){projects[args.project.name]={...structuredClone(args.project),thumbnail:null};localStorage.setItem('fixture:projects',JSON.stringify(projects));return;}
       if(cmd==='save_thumbnail'||cmd==='serial_disconnect')return;
-      if(cmd==='list_project_assets')return [];
+      if(cmd==='list_project_assets')return structuredClone(fixture.resourceEntries || []);
+      if(cmd==='add_project_assets'){
+        if(fixture.holdAssetWrite) await new Promise(resolve=>{fixture.releaseAssetWrite=resolve;});
+        const added=args.paths.map(path=>[args.folder,path.split('/').at(-1)].filter(Boolean).join('/'));
+        fixture.resourceEntries.push(...added.map(path=>({path,size:1024})));
+        return added;
+      }
+      if(cmd==='remove_project_asset'){
+        fixture.resourceEntries=fixture.resourceEntries.filter(entry=>entry.path!==args.path);
+        return;
+      }
+      if(cmd==='plugin:dialog|open' && fixture.resourcePick)return fixture.resourcePick;
       if(cmd==='plugin:dialog|save'||cmd==='plugin:dialog|open')return fixture.htmlPath || null;
       if(cmd==='prepare_html_export'){
         const {files,libraries,p5Version}=projects[args.name];
@@ -217,22 +230,151 @@ try {
     const matrix=await context.newPage();
     await matrix.setViewportSize({width,height});
     await matrix.goto((process.env.PC_WORKFLOW_URL || 'http://127.0.0.1:1424/')+'#'+lang+'-'+theme);
+    await matrix.evaluate(()=>localStorage.removeItem('p5js-studio-editor-preview-split'));
     await matrix.getByPlaceholder(lang==='zh'?'搜索项目名、目录或笔记...':'Search name, folder or notes...').fill('Class/A');
     await matrix.getByRole('button',{name:lang==='zh'?'编辑: A':'Edit: A',exact:true}).click();
     await matrix.locator('.cm-content').waitFor();
-    await matrix.getByRole('button',{name:lang==='zh'?'资源':'Resources',exact:true}).click();
+    const resourceButton=matrix.getByRole('button',{name:lang==='zh'?'资源':'Resources',exact:true});
+    const sidebar=matrix.locator('#project-resources');
+    assert.equal(await sidebar.count(),0);
+    const before=(await matrix.locator('.cm-editor').boundingBox()).height;
+    await resourceButton.click();
+    await sidebar.waitFor();
+    const sidebarWidth=(await sidebar.boundingBox()).width;
+    assert.ok(sidebarWidth>=200 && sidebarWidth<=280);
+    assert.equal((await matrix.locator('.cm-editor').boundingBox()).height,before);
     assert.ok(await matrix.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
+    const divider=matrix.getByRole('separator',{name:lang==='zh'?'调整代码区和预览区宽度':'Resize editor and preview'});
+    const dividerBox=await divider.boundingBox();
+    const startX=dividerBox.x+dividerBox.width/2;
+    const startY=dividerBox.y+Math.min(25,dividerBox.height/2);
+    await matrix.mouse.move(startX,startY);
+    await matrix.mouse.down();
+    await matrix.mouse.move(startX+25,startY,{steps:4});
+    await matrix.mouse.up();
+    assert.ok((await divider.boundingBox()).x>dividerBox.x+10,`Split drag did not move at ${lang}/${theme}/${width}×${height}`);
     await matrix.getByRole('button',{name:lang==='zh'?'全屏预览':'Fullscreen preview',exact:true}).click();
     assert.ok(await matrix.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
     await matrix.getByRole('button',{name:lang==='zh'?'退出全屏':'Exit fullscreen',exact:true}).click();
     await matrix.getByRole('combobox',{name:lang==='zh'?'p5.js 版本':'p5.js version',exact:true}).selectOption('2.3.4');
     await matrix.getByRole('button',{name:lang==='zh'?'▶ 运行':'▶ Run',exact:true}).click();
     await matrix.frameLocator('iframe').locator('canvas').waitFor();
+    const frame=await matrix.locator('iframe').elementHandle();
+    await resourceButton.click();
+    await sidebar.waitFor({state:'detached'});
+    assert.equal(await matrix.locator('iframe').evaluate((node,before)=>node===before,frame),true);
     await matrix.getByRole('button',{name:lang==='zh'?'停止':'Stop',exact:true}).click();
     assert.equal(await matrix.locator('iframe').count(),0);
     await matrix.close();
   }
-  check('12 headless layouts: two languages, two themes, three sizes; p5.js 2.x run and stop');
+  check('12 headless layouts: resource sidebar, unchanged editor height, split dragging, fullscreen, p5.js run and stop');
+
+  const resourcePage=await context.newPage();
+  await resourcePage.setViewportSize({width:800,height:600});
+  await resourcePage.goto(process.env.PC_WORKFLOW_URL || 'http://127.0.0.1:1424/');
+  const longPath='assets/'+('long-directory/'.repeat(8))+'detail.png';
+  await resourcePage.evaluate(path=>{
+    const fixture=window.__fixture;
+    fixture.resourceEntries=[
+      {path:'bg.png',size:512*1024},
+      {path:'character.png',size:191*1024},
+      {path:'fg.png',size:86*1024},
+      {path,size:1024},
+      ...Array.from({length:45},(_,index)=>({path:'assets/image-'+index+'.png',size:1024})),
+    ];
+    fixture.htmlAssets={
+      'lib/a.js':'data:text/javascript;base64,'+btoa('const a = 1;'),
+      'lib/b.js':'data:text/javascript;base64,'+btoa('const b = 2;'),
+    };
+    fixture.projects['Class/A']={
+      files:[{name:'sketch.js',code:'function setup(){createCanvas(100,100)} function draw(){parent.__resourceFrames=(parent.__resourceFrames||0)+1;}'},
+        {name:'helper.js',code:'// keep this selection\nconst helper = 9;'}],
+      notes:'',libraries:['lib/a.js','missing.js'],p5Version:'1.11.13',thumbnail:null,
+    };
+    Object.defineProperty(navigator,'clipboard',{value:{writeText:async value=>{fixture.copiedResource=value;}}});
+  },longPath);
+  await resourcePage.getByPlaceholder('Search name, folder or notes...').fill('Class/A');
+  await resourcePage.getByRole('button',{name:'Edit: A',exact:true}).click();
+  const toggleResources=resourcePage.getByRole('button',{name:'Resources',exact:true});
+  await toggleResources.click();
+  const resources=resourcePage.locator('#project-resources');
+  const filesTab=resources.getByRole('tab',{name:/^Files/});
+  const depsTab=resources.getByRole('tab',{name:/^Dependencies/});
+  const body=resources.getByRole('tabpanel');
+  await resources.getByText('character.png',{exact:true}).waitFor();
+  assert.equal(await filesTab.getAttribute('aria-selected'),'true');
+  assert.equal(await depsTab.locator('[aria-label="Unavailable dependencies: 1"]').count(),1);
+  await resourcePage.screenshot({path:'artifacts/validation/pc-workflow/resources-sidebar.png'});
+  const headerTop=(await resources.locator('header').boundingBox()).y;
+  assert.ok(await body.evaluate(node=>node.scrollHeight>node.clientHeight && node.scrollWidth<=node.clientWidth));
+  await body.evaluate(node=>{node.scrollTop=node.scrollHeight;});
+  assert.equal((await resources.locator('header').boundingBox()).y,headerTop);
+  assert.equal(await resourcePage.evaluate(()=>window.scrollY),0);
+  await body.evaluate(node=>{node.scrollTop=0;});
+  await resources.getByRole('button',{name:'File actions: '+longPath,exact:true}).click();
+  await resources.locator('code').filter({hasText:longPath}).waitFor();
+  await resources.getByRole('button',{name:'Copy path',exact:true}).click();
+  assert.equal(await resourcePage.evaluate(()=>window.__fixture.copiedResource),longPath);
+  const remove=resources.getByRole('button',{name:'Remove',exact:true});
+  resourcePage.once('dialog',dialog=>dialog.dismiss());
+  await remove.click();
+  assert.equal(await resourcePage.evaluate(()=>window.__fixture.calls.filter(call=>call.cmd==='remove_project_asset').length),0);
+  resourcePage.once('dialog',dialog=>dialog.accept());
+  await remove.click();
+  await resources.getByText('detail.png',{exact:true}).waitFor({state:'detached'});
+  check('Resource sidebar scroll, full paths, copy and confirmed removal');
+
+  await resourcePage.evaluate(()=>{window.__fixture.resourcePick=['C:/fixtures/new.png'];window.__fixture.holdAssetWrite=true;});
+  await resources.getByRole('button',{name:'Add files',exact:true}).click();
+  await resourcePage.waitForFunction(()=>window.__fixture.releaseAssetWrite);
+  assert.equal(await toggleResources.isDisabled(),true);
+  assert.equal(await resources.getByRole('button',{name:'Close resources'}).isDisabled(),true);
+  await resourcePage.evaluate(()=>{window.__fixture.holdAssetWrite=false;window.__fixture.releaseAssetWrite();});
+  await resources.getByText('new.png',{exact:true}).waitFor();
+  const addArgs=await resourcePage.evaluate(()=>window.__fixture.calls.find(call=>call.cmd==='add_project_assets').args);
+  assert.deepEqual(addArgs,{name:'Class/A',paths:['C:/fixtures/new.png'],folder:'assets',overwrite:false});
+  await resources.getByText('Add options',{exact:true}).click();
+  await resources.getByLabel('Resource subfolder').fill('nested');
+  await resourcePage.evaluate(()=>window.__fixture.dropFiles(['C:/fixtures/dropped.png']));
+  await resources.getByText('dropped.png',{exact:true}).waitFor();
+  assert.equal(await resourcePage.evaluate(()=>window.__fixture.calls.filter(call=>call.cmd==='add_project_assets').at(-1).args.folder),'nested');
+  check('Resource sidebar adds and drops files with the selected destination and locks closing during writes');
+
+  await filesTab.focus();
+  await filesTab.press('ArrowRight');
+  assert.equal(await depsTab.getAttribute('aria-selected'),'true');
+  const missing=resources.locator('li').filter({hasText:'missing.js'});
+  await missing.getByRole('button',{name:'Remove entry'}).click();
+  assert.equal(await depsTab.locator('[aria-label="Unavailable dependencies: 1"]').count(),0);
+  await resources.getByRole('combobox',{name:'Choose local JS'}).selectOption('lib/b.js');
+  await resources.getByRole('button',{name:'Add dependency'}).click();
+  await resources.getByRole('button',{name:'Move up: 2'}).click();
+  assert.deepEqual(await resources.locator('ol code').allTextContents(),['1. lib/b.js','2. lib/a.js']);
+  await resourcePage.getByRole('tab',{name:'helper.js',exact:true}).click();
+  await resourcePage.getByRole('button',{name:'▶ Run',exact:true}).click();
+  await resourcePage.waitForFunction(()=>window.__resourceFrames>1);
+  await resourcePage.locator('.cm-content').press('Control+End');
+  const workspace=await resourcePage.evaluate(()=>{
+    const content=document.querySelector('.cm-content');
+    const preview=document.querySelector('iframe');
+    window.__resourceEditor=content;
+    window.__resourcePreview=preview;
+    const selection=window.getSelection();
+    return {frames:window.__resourceFrames,offset:selection.anchorOffset,text:selection.anchorNode?.textContent};
+  });
+  await filesTab.click();
+  await resources.getByRole('button',{name:'Close resources'}).click();
+  assert.equal(await toggleResources.getAttribute('aria-expanded'),'false');
+  assert.equal(await resourcePage.getByRole('tab',{name:'helper.js',exact:true}).getAttribute('aria-selected'),'true');
+  assert.ok(await resourcePage.evaluate(()=>document.querySelector('.cm-content')===window.__resourceEditor && document.querySelector('iframe')===window.__resourcePreview));
+  await resourcePage.locator('.cm-content').focus();
+  assert.deepEqual(await resourcePage.evaluate(()=>{
+    const selection=window.getSelection();
+    return [selection.anchorOffset,selection.anchorNode?.textContent];
+  }),[workspace.offset,workspace.text]);
+  await resourcePage.waitForFunction(before=>window.__resourceFrames>before,workspace.frames);
+  await resourcePage.close();
+  check('Resource dependency status and order, keyboard tabs, and editor/preview continuity');
 
   const navigation = await context.newPage();
   await navigation.goto(process.env.PC_WORKFLOW_URL || 'http://127.0.0.1:1424/');

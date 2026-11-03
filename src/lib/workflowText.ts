@@ -3,6 +3,9 @@ import { Language } from "./language";
 const messages = {
   en: {
     resources: "Resources", addResources: "Add files", resourceFolder: "Resource subfolder",
+    resourceFiles: "Files", resourceDependencies: "Dependencies", resourceOptions: "Add options",
+    resourceDestination: "Add to", resourceRoot: "Project root", resourceActions: "File actions",
+    resourceIssues: "Unavailable dependencies", closeResources: "Close resources",
     resourceHint: "Paths are relative to this project. Project ZIP also bundles shared public assets.",
     copyPath: "Copy path", copied: "Copied", overwriteAssets: "Replace same-name resources (otherwise keep both)",
     exportProject: "Export Project ZIP", exportHtml: "Export HTML", exportTitle: "Export Project",
@@ -28,6 +31,9 @@ const messages = {
   },
   "zh-CN": {
     resources: "资源", addResources: "添加文件", resourceFolder: "资源子文件夹",
+    resourceFiles: "文件", resourceDependencies: "依赖", resourceOptions: "添加选项",
+    resourceDestination: "添加到", resourceRoot: "项目根目录", resourceActions: "文件操作",
+    resourceIssues: "不可用的依赖", closeResources: "收起资源",
     resourceHint: "路径相对于当前项目。项目 ZIP 也会打包共享 public 资源。",
     copyPath: "复制路径", copied: "已复制", overwriteAssets: "替换同名资源（不勾选则保留两份）",
     exportProject: "导出项目 ZIP", exportHtml: "导出 HTML", exportTitle: "导出项目",

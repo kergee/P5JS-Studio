@@ -111,6 +111,7 @@ export default function Editor({ initialName, onBack, theme, onToggleTheme, lang
   const [operationError, setOperationError] = useState("");
   const [operationMessage, setOperationMessage] = useState("");
   const [showResources, setShowResources] = useState(false);
+  const resourcesButtonRef = useRef<HTMLButtonElement>(null);
   const [showProjectExport, setShowProjectExport] = useState(false);
   const [showTools, setShowTools] = useState(false);
   const toolsRef = useRef<HTMLDivElement>(null);
@@ -239,8 +240,8 @@ export default function Editor({ initialName, onBack, theme, onToggleTheme, lang
 
   const updateSplitFromClientX = useCallback((clientX: number) => {
     const rect = splitContainerRef.current?.getBoundingClientRect();
-    if (!rect || rect.width <= 0) return;
-    const nextWidth = ((clientX - rect.left) / rect.width) * 100;
+    if (!rect || rect.width <= 8) return;
+    const nextWidth = ((clientX - rect.left - 4) / (rect.width - 8)) * 100;
     setEditorWidthPercent(Number(clampEditorWidthPercent(nextWidth).toFixed(1)));
   }, []);
 
@@ -510,7 +511,14 @@ export default function Editor({ initialName, onBack, theme, onToggleTheme, lang
             {RUNTIMES.map((runtime) => <option key={runtime.version} value={runtime.version}>{runtime.version}</option>)}
           </select>
         </label>
-        <button disabled={busy || !loaded} className={`${subtleButtonClass} px-2 py-1.5 text-sm rounded`} onClick={() => setShowResources((v) => !v)}>{w.resources}</button>
+        <button
+          ref={resourcesButtonRef}
+          disabled={busy || !loaded}
+          aria-expanded={showResources}
+          aria-controls={showResources ? "project-resources" : undefined}
+          className={`${subtleButtonClass} px-2 py-1.5 text-sm rounded aria-expanded:bg-blue-500/15`}
+          onClick={() => setShowResources((value) => !value)}
+        >{w.resources}</button>
         <button disabled={busy || !loaded} className={`${subtleButtonClass} px-2 py-1.5 text-sm rounded`} onClick={() => setShowProjectExport(true)}>{w.exportTitle}</button>
         <button
           onClick={() => setShowNotes((v) => !v)}
@@ -589,146 +597,156 @@ export default function Editor({ initialName, onBack, theme, onToggleTheme, lang
       {!getRuntime(p5Version) && <p className="text-amber-500 text-xs px-4 py-1">{w.missingVersion}</p>}
       {runningVersion && runningVersion !== p5Version && <p className="text-amber-500 text-xs px-4 py-1">{w.nextRun}</p>}
       {getRuntime(p5Version)?.major === 2 && <p className="text-xs opacity-70 px-4 py-1">{w.v2Hint}</p>}
-      {showResources && <ProjectResources name={name} theme={theme} language={language} ensureSaved={save} onAssetsChanged={refreshAssets} onBusyChange={setResourceBusy} libraries={libraries} assets={assets} onLibrariesChange={setLibraries} codeFiles={files.map((file) => file.name)} disabled={operationBusy || !loaded} />}
-      {/* File tabs */}
-      <FileTabs
-        files={files.map((f) => f.name)}
-        activeFile={activeFile}
-        onSwitch={setActiveFile}
-        onAdd={handleAddFile}
-        onRemove={handleRemoveFile}
-        theme={theme}
-        language={language}
-        disabled={busy || !loaded}
-      />
-
-      {/* Notes panel (collapsible) */}
-      {showNotes && (
-        <div
-          className={`px-4 py-2 border-b shrink-0 ${
-            light ? "bg-white border-gray-200" : "bg-gray-800 border-gray-700"
-          }`}
-        >
-          <textarea
-            value={notes} disabled={busy || !loaded}
-            onChange={(e) => setNotes(e.target.value)}
-            placeholder={t.addNotesPlaceholder}
-            rows={3}
-            className={`w-full text-sm px-3 py-2 rounded resize-none outline-none placeholder-gray-500 border focus:border-blue-500 ${
-              light
-                ? "bg-gray-50 text-gray-900 border-gray-300"
-                : "bg-gray-700 text-gray-200 border-gray-600"
-            }`}
-          />
-        </div>
-      )}
-
-      {/* Editor + Preview */}
-      <div ref={splitContainerRef} className="relative flex flex-1 overflow-hidden">
-        <div
-          className="min-w-0 shrink-0 overflow-hidden"
-          style={{ width: `${editorWidthPercent}%` }}
-          onScrollCapture={() => {
-            const view = codeMirrorRef.current?.view;
-            const session = fileSessions.current.get(activeFile);
-            if (view && session) { session.top = view.scrollDOM.scrollTop; session.left = view.scrollDOM.scrollLeft; }
-          }}
-          onWheel={(event) => {
-            if (!event.ctrlKey) return;
-            event.preventDefault();
-            adjustFontSize(event.deltaY < 0 ? 1 : -1);
-          }}
-        >
-          <CodeMirror
-            key={activeFile}
-            ref={codeMirrorRef}
-            initialState={fileSessions.current.has(activeFile) ? { json: fileSessions.current.get(activeFile)!.json, fields: { history: historyField } } : undefined}
-            onUpdate={(update) => {
-              fileSessions.current.set(activeFile, { json: update.state.toJSON({ history: historyField }), top: update.view.scrollDOM.scrollTop, left: update.view.scrollDOM.scrollLeft });
-            }}
-            onCreateEditor={(view) => {
-              const session = fileSessions.current.get(activeFile);
-              if (session) requestAnimationFrame(() => { if (view.dom.isConnected) { view.scrollDOM.scrollTop = session.top; view.scrollDOM.scrollLeft = session.left; view.focus(); } });
-              if (pendingLocation.current?.file === activeFile) requestAnimationFrame(() => { if (pendingLocation.current) focusLocation(pendingLocation.current); });
-            }}
-            value={activeCode}
-            readOnly={busy || !loaded}
-            height="100%"
-            theme={light ? "light" : oneDark}
-            extensions={getRuntime(p5Version)?.major === 1 ? [javascript(), p5LintExtension, p5CompletionExtension, keymapExt] : [javascript(), keymapExt]}
-            onChange={updateCode}
-            style={{ height: "100%", fontSize: `${fontSize}px` }}
-            basicSetup={{ lineNumbers: true, foldGutter: true, autocompletion: true }}
-          />
-        </div>
-        <button
-          type="button"
-          role="separator"
-          aria-label={t.resizeEditorPreview}
-          aria-orientation="vertical"
-          aria-valuemin={MIN_EDITOR_WIDTH_PERCENT}
-          aria-valuemax={MAX_EDITOR_WIDTH_PERCENT}
-          aria-valuenow={Math.round(editorWidthPercent)}
-          onPointerDown={startResize}
-          onDoubleClick={() => setEditorWidthPercent(DEFAULT_EDITOR_WIDTH_PERCENT)}
-          onKeyDown={(event) => {
-            if (event.key === "ArrowLeft") {
-              event.preventDefault();
-              adjustEditorWidth(-2);
-            }
-            if (event.key === "ArrowRight") {
-              event.preventDefault();
-              adjustEditorWidth(2);
-            }
-            if (event.key === "Home") {
-              event.preventDefault();
-              setEditorWidthPercent(MIN_EDITOR_WIDTH_PERCENT);
-            }
-            if (event.key === "End") {
-              event.preventDefault();
-              setEditorWidthPercent(MAX_EDITOR_WIDTH_PERCENT);
-            }
-          }}
-          className={`group relative z-20 w-2 shrink-0 cursor-col-resize outline-none transition-colors focus-visible:bg-blue-500/20 ${
-            light ? "bg-gray-100 hover:bg-gray-200" : "bg-gray-800 hover:bg-gray-700"
-          }`}
-          title={t.resizeEditorPreview}
-        >
-          <span
-            className={`absolute left-1/2 top-0 h-full w-px -translate-x-1/2 transition-colors ${
-              isResizing
-                ? "bg-blue-500"
-                : light
-                  ? "bg-gray-300 group-hover:bg-gray-400"
-                  : "bg-gray-600 group-hover:bg-gray-500"
-            }`}
-          />
-        </button>
-        <div
-          className={`min-w-0 shrink-0 ${light ? "bg-gray-100" : "bg-black"}`}
-          style={{ width: `${100 - editorWidthPercent}%` }}
-        >
-          <Preview
-            serial={serial}
-            serialEnabled={serialEnabled && serialSupported}
-            serialOpenTrigger={serialOpenTrigger}
-            serialProject={persistedName}
-            sourceFiles={files}
-            onLocate={jumpToLocation}
-            code={combinedCode}
-            assets={assets}
-            libraries={libraries}
-            runTrigger={runTrigger}
-            p5Version={p5Version}
-            onThumbnail={handleThumbnail}
-            debugMessages={debugMessages}
-            onDebugMessage={appendDebugMessage}
-            onClearDebug={() => setDebugMessages([])}
+      <div className="flex min-h-0 flex-1 overflow-hidden">
+        {showResources && <ProjectResources
+          name={name} theme={theme} language={language} ensureSaved={save}
+          onAssetsChanged={refreshAssets} onBusyChange={setResourceBusy}
+          libraries={libraries} assets={assets} onLibrariesChange={setLibraries}
+          codeFiles={files.map((file) => file.name)} disabled={operationBusy || !loaded}
+          onClose={() => { setShowResources(false); resourcesButtonRef.current?.focus(); }}
+        />}
+        <div className="flex min-w-0 flex-1 flex-col">
+          {/* File tabs */}
+          <FileTabs
+            files={files.map((f) => f.name)}
+            activeFile={activeFile}
+            onSwitch={setActiveFile}
+            onAdd={handleAddFile}
+            onRemove={handleRemoveFile}
             theme={theme}
             language={language}
+            disabled={busy || !loaded}
           />
+
+          {/* Notes panel (collapsible) */}
+          {showNotes && (
+            <div
+              className={`px-4 py-2 border-b shrink-0 ${
+                light ? "bg-white border-gray-200" : "bg-gray-800 border-gray-700"
+              }`}
+            >
+              <textarea
+                value={notes} disabled={busy || !loaded}
+                onChange={(e) => setNotes(e.target.value)}
+                placeholder={t.addNotesPlaceholder}
+                rows={3}
+                className={`w-full text-sm px-3 py-2 rounded resize-none outline-none placeholder-gray-500 border focus:border-blue-500 ${
+                  light
+                    ? "bg-gray-50 text-gray-900 border-gray-300"
+                    : "bg-gray-700 text-gray-200 border-gray-600"
+                }`}
+              />
+            </div>
+          )}
+
+          {/* Editor + Preview */}
+          <div ref={splitContainerRef} className="relative flex min-h-0 flex-1 overflow-hidden">
+            <div
+              className="min-w-0 basis-0 overflow-hidden"
+              style={{ flexGrow: editorWidthPercent }}
+              onScrollCapture={() => {
+                const view = codeMirrorRef.current?.view;
+                const session = fileSessions.current.get(activeFile);
+                if (view && session) { session.top = view.scrollDOM.scrollTop; session.left = view.scrollDOM.scrollLeft; }
+              }}
+              onWheel={(event) => {
+                if (!event.ctrlKey) return;
+                event.preventDefault();
+                adjustFontSize(event.deltaY < 0 ? 1 : -1);
+              }}
+            >
+              <CodeMirror
+                key={activeFile}
+                ref={codeMirrorRef}
+                initialState={fileSessions.current.has(activeFile) ? { json: fileSessions.current.get(activeFile)!.json, fields: { history: historyField } } : undefined}
+                onUpdate={(update) => {
+                  fileSessions.current.set(activeFile, { json: update.state.toJSON({ history: historyField }), top: update.view.scrollDOM.scrollTop, left: update.view.scrollDOM.scrollLeft });
+                }}
+                onCreateEditor={(view) => {
+                  const session = fileSessions.current.get(activeFile);
+                  if (session) requestAnimationFrame(() => { if (view.dom.isConnected) { view.scrollDOM.scrollTop = session.top; view.scrollDOM.scrollLeft = session.left; view.focus(); } });
+                  if (pendingLocation.current?.file === activeFile) requestAnimationFrame(() => { if (pendingLocation.current) focusLocation(pendingLocation.current); });
+                }}
+                value={activeCode}
+                readOnly={busy || !loaded}
+                height="100%"
+                theme={light ? "light" : oneDark}
+                extensions={getRuntime(p5Version)?.major === 1 ? [javascript(), p5LintExtension, p5CompletionExtension, keymapExt] : [javascript(), keymapExt]}
+                onChange={updateCode}
+                style={{ height: "100%", fontSize: `${fontSize}px` }}
+                basicSetup={{ lineNumbers: true, foldGutter: true, autocompletion: true }}
+              />
+            </div>
+            <button
+              type="button"
+              role="separator"
+              aria-label={t.resizeEditorPreview}
+              aria-orientation="vertical"
+              aria-valuemin={MIN_EDITOR_WIDTH_PERCENT}
+              aria-valuemax={MAX_EDITOR_WIDTH_PERCENT}
+              aria-valuenow={Math.round(editorWidthPercent)}
+              onPointerDown={startResize}
+              onDoubleClick={() => setEditorWidthPercent(DEFAULT_EDITOR_WIDTH_PERCENT)}
+              onKeyDown={(event) => {
+                if (event.key === "ArrowLeft") {
+                  event.preventDefault();
+                  adjustEditorWidth(-2);
+                }
+                if (event.key === "ArrowRight") {
+                  event.preventDefault();
+                  adjustEditorWidth(2);
+                }
+                if (event.key === "Home") {
+                  event.preventDefault();
+                  setEditorWidthPercent(MIN_EDITOR_WIDTH_PERCENT);
+                }
+                if (event.key === "End") {
+                  event.preventDefault();
+                  setEditorWidthPercent(MAX_EDITOR_WIDTH_PERCENT);
+                }
+              }}
+              className={`group relative z-20 w-2 shrink-0 cursor-col-resize outline-none transition-colors focus-visible:bg-blue-500/20 ${
+                light ? "bg-gray-100 hover:bg-gray-200" : "bg-gray-800 hover:bg-gray-700"
+              }`}
+              title={t.resizeEditorPreview}
+            >
+              <span
+                className={`absolute left-1/2 top-0 h-full w-px -translate-x-1/2 transition-colors ${
+                  isResizing
+                    ? "bg-blue-500"
+                    : light
+                      ? "bg-gray-300 group-hover:bg-gray-400"
+                      : "bg-gray-600 group-hover:bg-gray-500"
+                }`}
+              />
+            </button>
+            <div
+              className={`min-w-0 basis-0 overflow-hidden ${light ? "bg-gray-100" : "bg-black"}`}
+              style={{ flexGrow: 100 - editorWidthPercent }}
+            >
+              <Preview
+                serial={serial}
+                serialEnabled={serialEnabled && serialSupported}
+                serialOpenTrigger={serialOpenTrigger}
+                serialProject={persistedName}
+                sourceFiles={files}
+                onLocate={jumpToLocation}
+                code={combinedCode}
+                assets={assets}
+                libraries={libraries}
+                runTrigger={runTrigger}
+                p5Version={p5Version}
+                onThumbnail={handleThumbnail}
+                debugMessages={debugMessages}
+                onDebugMessage={appendDebugMessage}
+                onClearDebug={() => setDebugMessages([])}
+                theme={theme}
+                language={language}
+              />
+            </div>
+            {isResizing && <div className="fixed inset-0 z-50 cursor-col-resize" />}
+          </div>
         </div>
-        {isResizing && <div className="fixed inset-0 z-50 cursor-col-resize" />}
       </div>
       {(draftCandidate || draftUnreadable) && <WorkflowDialog title={pc.draftFound} theme={theme}>
         <p>{pc.draftHint}</p>
