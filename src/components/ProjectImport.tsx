@@ -6,12 +6,15 @@ import { ColorTheme, isLightTheme } from "../lib/theme";
 import { workflowText } from "../lib/workflowText";
 import WorkflowDialog from "./WorkflowDialog";
 
+type ImportFormat = "zip" | "html" | "web-zip";
+
 export default function ProjectImport({ currentPath, language, theme, onClose, onImported }: {
   currentPath: string; language: Language; theme: ColorTheme; onClose: () => void; onImported: () => Promise<void>;
 }) {
   const w = workflowText(language);
   const [folders, setFolders] = useState<string[]>([]);
   const [target, setTarget] = useState(currentPath);
+  const [format, setFormat] = useState<ImportFormat>("zip");
   const [paths, setPaths] = useState<string[]>([]);
   const [skip, setSkip] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -36,13 +39,31 @@ export default function ProjectImport({ currentPath, language, theme, onClose, o
       catch (e) { setError(String(e)); }
     }}>{w.newFolder}</button>
     <div className="my-4">
+      <label className="block mb-3">{w.importFormat}
+        <select className={inputClass} value={format} disabled={busy} onChange={(e) => {
+          setFormat(e.target.value as ImportFormat);
+          setPaths([]); setResults([]); setError("");
+        }}>
+          <option value="zip">{language === "zh-CN" ? "项目 ZIP" : "Project ZIP"}</option>
+          <option value="html">Studio HTML</option>
+          <option value="web-zip">{w.webZip}</option>
+        </select>
+      </label>
+      {format === "html" && <p className="text-sm mb-3">{w.importHtmlHint}</p>}
+      {format === "web-zip" && <p className="text-sm mb-3">{w.webZipHint}</p>}
       <button disabled={busy} className="bg-blue-600 text-white rounded px-3 py-2" onClick={async () => {
-        try { const selected = await open({ multiple: true, filters: [{ name: "Project ZIP", extensions: ["zip"] }] }); if (selected) { setPaths(Array.isArray(selected) ? selected : [selected]); setResults([]); } }
+        try {
+          const selected = await open({
+            multiple: format !== "html",
+            filters: [{ name: format === "html" ? "Studio HTML" : "ZIP", extensions: [format === "html" ? "html" : "zip"] }],
+          });
+          if (selected) { setPaths(Array.isArray(selected) ? selected : [selected]); setResults([]); setError(""); }
+        }
         catch (e) { setError(String(e)); }
-      }}>{w.chooseZips}</button>
+      }}>{format === "html" ? w.chooseHtml : format === "web-zip" ? w.chooseWebZips : w.chooseZips}</button>
       <ul className="mt-2 text-sm max-h-40 overflow-auto select-text">{paths.map((p) => <li key={p}>{p.split(/[\\/]/).pop()}</li>)}</ul>
     </div>
-    <label className="text-sm"><input disabled={busy} type="checkbox" checked={skip} onChange={(e) => setSkip(e.target.checked)} /> {w.skipExisting}</label>
+    {format === "zip" && <label className="text-sm"><input disabled={busy} type="checkbox" checked={skip} onChange={(e) => setSkip(e.target.checked)} /> {w.skipExisting}</label>}
     {error && <p role="alert" className="text-red-500 mt-3 select-text">{error}</p>}
     <ul role="status" className="text-sm mt-3 max-h-48 overflow-auto select-text">{results.map((r, i) => <li key={i} className="break-all">{r}</li>)}</ul>
     <div className="flex justify-end gap-4 mt-5">
@@ -52,7 +73,20 @@ export default function ProjectImport({ currentPath, language, theme, onClose, o
         try {
           for (const path of paths) {
             const file = path.split(/[\\/]/).pop();
-            try { const imported = await tauriApi.importProjectZip(path, target, skip); setResults((r) => [...r, imported ? `${w.imported}: ${imported}` : `${w.skipped}: ${file}`]); }
+            try {
+              if (format === "web-zip") {
+                const imported = await tauriApi.importP5WebZip(path, target);
+                const version = imported.sourceVersion === imported.p5Version
+                  ? imported.p5Version
+                  : `${imported.sourceVersion} → ${imported.p5Version}`;
+                setResults((r) => [...r, `${w.imported}: ${imported.path} (p5.js ${version})`]);
+              } else {
+                const imported = format === "html"
+                  ? await tauriApi.importProjectHtml(path, target)
+                  : await tauriApi.importProjectZip(path, target, skip);
+                setResults((r) => [...r, imported ? `${w.imported}: ${imported}` : `${w.skipped}: ${file}`]);
+              }
+            }
             catch (e) { setResults((r) => [...r, `${w.failed}: ${file} — ${String(e)}`]); }
           }
           await onImported();

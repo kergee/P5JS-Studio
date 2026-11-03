@@ -305,7 +305,11 @@ function preload() {
 
 共享 `public` 的普通资源会一并复制到每个项目，确保动态路径引用可携带，因此项目包可能含未使用的共享资源。请在导出前检查共享目录。声明的本地库和模型依赖也会携带；远程网址、远程 API、未下载的模型仍需要网络。
 
-当前项目 ZIP 必须包含 `meta.json` 和它列出的代码文件，支持单层包装文件夹。通用 HTML ZIP 转换未实现。详情见 [学生提交与教师归档](docs/teaching-workflow.zh-CN.md) 和 [演示项目](examples/README.md)。
+Studio 项目 ZIP 必须包含 `meta.json` 和它列出的代码文件，支持单层包装文件夹。详情见 [学生提交与教师归档](docs/teaching-workflow.zh-CN.md) 和 [演示项目](examples/README.md)。
+
+图库的 **导入项目 → p5.js 网页 ZIP** 支持以 `index.html` 为入口的经典 p5.js 项目。将引用的 JS、图片、字体等一起压缩，可使用单层包装文件夹。脚本按加载顺序转成可编辑标签，导入结果会显示原 p5.js 版本及选用的内置版本。原 HTML、CSS 与资源按原路径保留，预览使用 Studio 的草图画布。需要额外的远程脚本时，请先下载到项目里并改为本地路径。ES 模块网页需要使用原网页运行。
+
+在编辑器中选择 **导出项目 → 导出 HTML**，可分享一个能在浏览器里打开的文件。它内嵌 p5.js、项目资源和本地依赖。图库的 **导入项目 → Studio HTML** 可还原为可编辑的项目。笔记、评分、收藏和缩略图请用项目 ZIP 归档。需要的共享图片或字体请先加入项目。
 
 ### 添加本地资源
 
@@ -338,7 +342,7 @@ Windows 编辑器通过 **更多工具 → ESP32** 按需打开。底部“调�
 
 **当前为软件原型，完整实机验收仍待完成。基础 C3 串口连通反馈不能代替通用固件、按键、灯光与 RSSI 的整体验收。正式发布的 v1.3.2 安装包不包含新增功能；Actions 手动测试包沿用 1.3.2，以提交和运行编号区分。**
 
-PC 目录切换修复、验证范围和 Actions 下载方式见 [2026-10-31 更新说明](docs/pc-update-20261031.zh-CN.md)。手动运行 [Build & Release](https://github.com/kergee/P5JS-Studio/actions/workflows/build.yml)，默认只构建 Windows；成功后在该次运行的 Artifacts 下载 EXE。手动构建不创建正式 Release。Windows 本地构建通过 `src-tauri/tauri.windows.conf.json` 默认只生成 NSIS 安装包，macOS 构建目标保持原样。
+桌面 1.4.0 的功能和使用方式见 [更新说明](docs/pc-update-20261103.zh-CN.md)。手动运行 [Build & Release](https://github.com/kergee/P5JS-Studio/actions/workflows/build.yml)，默认只构建 Windows。构建成功后可在该次运行的 Artifacts 下载 EXE。Windows 本地构建也默认使用 NSIS。
 
 后续顺序：先完成真实开发板双向通信、端口占用／拔线／重连及普通项目回归，再决定发布版本；Wi-Fi、多设备、手机 USB、固件编译与烧录均不包含在本期。手机端继续以整理归档和离线运行作品为主。
 
