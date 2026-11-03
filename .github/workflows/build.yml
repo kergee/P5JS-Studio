@@ -95,7 +95,7 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: P5JS-Studio-macOS-${{ github.sha }}
-          path: src-tauri/target/**/bundle/dmg/*.dmg
+          path: src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg
           if-no-files-found: error
           retention-days: 14
 
