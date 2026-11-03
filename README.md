@@ -305,7 +305,11 @@ Students use **Export Project ZIP** in the editor to package one project's JS fi
 
 Ordinary shared `public` assets are copied into each project to preserve dynamic relative paths. An export may therefore include unused shared assets: review that directory before sharing. Declared local libraries and model dependencies are included. Remote URLs, APIs and models that were not downloaded still require a network.
 
-Project archives must contain `meta.json` and every listed code file. One wrapper directory is supported. Arbitrary HTML ZIP conversion is not implemented. See the [teaching workflow](docs/teaching-workflow.zh-CN.md) and [examples](examples/README.md).
+Studio project archives must contain `meta.json` and every listed code file. One wrapper directory is supported. See the [teaching workflow](docs/teaching-workflow.zh-CN.md) and [examples](examples/README.md).
+
+Choose **Import Project → p5.js Web ZIP** for a classic p5.js site with `index.html` at the archive root or inside a single enclosing folder. Include local scripts and assets in the ZIP. Studio extracts editable scripts in load order and reports the bundled p5.js version it selected. Original HTML, CSS, and asset paths are retained as resources. The preview uses the Studio sketch canvas. Bundle any additional remote scripts locally before importing. ES module projects require the original webpage.
+
+Choose **Export Project → Export HTML** in the editor to share a single browser-ready file with p5.js, project assets, and local dependencies. **Import Project → Studio HTML** restores an editable project. Use Project ZIP to retain notes, ratings, favorites, and thumbnails. Add any needed shared images or fonts to the project before exporting HTML.
 
 ### Add Local Resources
 
@@ -338,7 +342,7 @@ Two anonymous [teaching ZIPs](examples/README.md) include sketches, firmware sou
 
 **Software prototype; complete hardware acceptance remains pending. Basic C3 serial connectivity feedback does not establish acceptance of the universal firmware, buttons, LEDs or RSSI. Official v1.3.2 release installers do not include these additions. Manual Actions test packages keep version 1.3.2 and are identified by commit and run ID.**
 
-See the [2026-10-31 directory-switch update notes](docs/pc-update-20261031.zh-CN.md) for changes and validation boundaries. Manually run [Build & Release](https://github.com/kergee/P5JS-Studio/actions/workflows/build.yml) to build Windows by default, then download the EXE from that run's Artifacts. Manual builds do not create a public Release. Windows local builds also default to NSIS through `src-tauri/tauri.windows.conf.json`; macOS builds keep their existing targets.
+See the [desktop 1.4.0 update notes](docs/pc-update-20261103.zh-CN.md) for changes and usage. Manually run [Build & Release](https://github.com/kergee/P5JS-Studio/actions/workflows/build.yml) to build Windows by default, then download the EXE from that run's Artifacts. Local Windows builds also default to NSIS.
 
 Complete real-board bidirectional communication, busy-port/unplug/reconnect and ordinary-project regression checks before deciding on a release. Wi-Fi, multiple devices, phone USB, firmware compilation and flashing remain deferred. Mobile remains focused on organizing and running projects offline.
 

@@ -111,6 +111,7 @@ export default function Editor({ initialName, onBack, theme, onToggleTheme, lang
   const [operationError, setOperationError] = useState("");
   const [operationMessage, setOperationMessage] = useState("");
   const [showResources, setShowResources] = useState(false);
+  const [showProjectExport, setShowProjectExport] = useState(false);
   const [showTools, setShowTools] = useState(false);
   const toolsRef = useRef<HTMLDivElement>(null);
   const [serialEnabled, setSerialEnabled] = useState(false);
@@ -332,14 +333,27 @@ export default function Editor({ initialName, onBack, theme, onToggleTheme, lang
     setAssets(nextAssets);
     return nextAssets;
   }, [name]);
-  const exportProject = async () => {
+  const exportProject = async (format: "zip" | "html") => {
     if (savingRef.current || operationRef.current || !loaded) return;
+    setShowProjectExport(false);
     operationRef.current = true; setBusy(true);
+    setOperationError(""); setOperationMessage("");
     try {
-      const dest = await saveDialog({ defaultPath: `${displayName}.zip`, filters: [{ name: "ZIP", extensions: ["zip"] }] });
+      const dest = await saveDialog({
+        defaultPath: `${displayName}.${format}`,
+        filters: [{ name: format.toUpperCase(), extensions: [format] }],
+      });
       if (!dest || !await save(true)) return;
-      setBusy(true); setOperationMessage("");
-      await tauriApi.exportProject(name, dest); setOperationMessage(`${w.done}: ${dest}`);
+      if (format === "html") {
+        const [project, { buildProjectHtml }] = await Promise.all([
+          tauriApi.prepareHtmlExport(name),
+          import("../lib/projectHtml"),
+        ]);
+        await tauriApi.writeProjectHtml(dest, buildProjectHtml(displayName, project), project.payload);
+      } else {
+        await tauriApi.exportProject(name, dest);
+      }
+      setOperationMessage(`${w.done}: ${dest}`);
     } catch (e) { setOperationError(String(e)); } finally { operationRef.current = false; setBusy(false); }
   };
 
@@ -497,7 +511,7 @@ export default function Editor({ initialName, onBack, theme, onToggleTheme, lang
           </select>
         </label>
         <button disabled={busy || !loaded} className={`${subtleButtonClass} px-2 py-1.5 text-sm rounded`} onClick={() => setShowResources((v) => !v)}>{w.resources}</button>
-        <button disabled={busy || !loaded} className={`${subtleButtonClass} px-2 py-1.5 text-sm rounded`} onClick={exportProject}>{w.exportProject}</button>
+        <button disabled={busy || !loaded} className={`${subtleButtonClass} px-2 py-1.5 text-sm rounded`} onClick={() => setShowProjectExport(true)}>{w.exportTitle}</button>
         <button
           onClick={() => setShowNotes((v) => !v)}
           className={`text-sm px-3 py-1.5 rounded transition-colors ${
@@ -563,6 +577,14 @@ export default function Editor({ initialName, onBack, theme, onToggleTheme, lang
       {draftError && <p role="alert" className="text-red-500 text-sm px-4 py-1">{pc.draftFailed}{draftError}</p>}
       {draftBackedUp && dirty && <p role="status" className="text-xs opacity-70 px-4">{pc.draftSaved}</p>}
       {operationError && <p role="alert" className="text-red-500 text-sm px-4 py-2 whitespace-pre-wrap select-text">{operationError}</p>}
+      {showProjectExport && <WorkflowDialog title={w.exportTitle} theme={theme}>
+        <p className="text-sm mb-4">{w.exportHtmlHint}</p>
+        <div className="flex flex-wrap justify-end gap-3">
+          <button onClick={() => setShowProjectExport(false)}>{w.cancel}</button>
+          <button className="rounded border px-3 py-2" onClick={() => void exportProject("zip")}>{w.exportProject}</button>
+          <button className="rounded bg-blue-600 text-white px-3 py-2" onClick={() => void exportProject("html")}>{w.exportHtml}</button>
+        </div>
+      </WorkflowDialog>}
       {operationMessage && <p role="status" className="text-green-600 text-sm px-4 py-2 select-text">{operationMessage}</p>}
       {!getRuntime(p5Version) && <p className="text-amber-500 text-xs px-4 py-1">{w.missingVersion}</p>}
       {runningVersion && runningVersion !== p5Version && <p className="text-amber-500 text-xs px-4 py-1">{w.nextRun}</p>}

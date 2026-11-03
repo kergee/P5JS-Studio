@@ -10,7 +10,7 @@ function escapeScript(source: string) {
   return source.replace(/<\/script/gi, "<\\/script");
 }
 
-function escapeAttribute(value: string) {
+export function escapeAttribute(value: string) {
   return value
     .replace(/&/g, "&amp;")
     .replace(/"/g, "&quot;")
@@ -58,12 +58,19 @@ export function buildSrcdoc(
   assets: SketchAssets = {},
   libraries: SketchLibraries = [],
   p5Version: string = LEGACY_P5_VERSION,
-  serialScope: SerialScope = { owner: "", project: "", run: "" }
+  serialScope: SerialScope | null = { owner: "", project: "", run: "" }
 ): string {
   const runtime = getRuntimeSources(p5Version);
   const assetJson = JSON.stringify(assets).replace(/<\//g, "<\\/");
   const libraryScripts = buildLibraryScripts(libraries, assets);
-  const serialSource = serialBootstrapSource(serialScope);
+  const studioPreview = serialScope !== null;
+  const serialSource = serialScope ? serialBootstrapSource(serialScope) : `
+    Object.defineProperty(window, 'studioSerial', { value: Object.freeze({
+      connected: false,
+      onLine: function() { return function() {}; },
+      writeLine: function() { return Promise.reject(new Error('ESP32 is not connected')); }
+    }) });
+  `;
 
   return `<!DOCTYPE html>
 <html>
@@ -148,6 +155,7 @@ export function buildSrcdoc(
       }
 
       window.__p5studioDebug = function(level, args, line, column, source) {
+        if (!${studioPreview}) return;
         try {
           window.parent.postMessage(
             {
@@ -509,6 +517,7 @@ export function buildSrcdoc(
         'touchEnded'
       ].forEach(wrapSketchFunction);
     })();
+    ${studioPreview ? `
     // Auto-capture a compact canvas thumbnail after 1.5s and send to parent.
     setTimeout(function() {
       try {
@@ -541,7 +550,7 @@ export function buildSrcdoc(
           );
         }
       } catch(e) {}
-    }, 1500);
+    }, 1500);` : ""}
   </script>
 </body>
 </html>`;

@@ -3,6 +3,10 @@
 use super::*;
 use std::collections::{BTreeMap, HashSet};
 use std::path::Path;
+use std::io::Seek;
+
+pub mod html;
+pub mod web_zip;
 
 const MAX_ENTRIES: usize = 10_000;
 const MAX_ARCHIVE_BYTES: u64 = 512 * 1024 * 1024;
@@ -85,20 +89,28 @@ fn write_zip(dest: &str, files: &BTreeMap<String, Vec<u8>>) -> Result<(), String
     let destination = Path::new(dest);
     let parent = destination.parent().ok_or("missing export directory")?;
     let temp = tempfile::NamedTempFile::new_in(parent).map_err(|e| e.to_string())?;
-    let mut writer = zip::ZipWriter::new(temp.reopen().map_err(|e| e.to_string())?);
+    write_zip_entries(temp.reopen().map_err(|e| e.to_string())?, files)?
+        .sync_all().map_err(|e| e.to_string())?;
+    temp.persist(destination).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+fn write_zip_entries<W: Write + Seek>(output: W, files: &BTreeMap<String, Vec<u8>>) -> Result<W, String> {
+    let mut writer = zip::ZipWriter::new(output);
     for (name, bytes) in files {
         writer.start_file(name, zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated))
             .map_err(|e| e.to_string())?;
         writer.write_all(bytes).map_err(|e| e.to_string())?;
     }
-    writer.finish().map_err(|e| e.to_string())?.sync_all().map_err(|e| e.to_string())?;
-    temp.persist(destination).map_err(|e| e.to_string())?;
-    Ok(())
+    writer.finish().map_err(|e| e.to_string())
 }
 
 fn read_zip(zip_path: &str) -> Result<BTreeMap<String, Vec<u8>>, String> {
-    let mut archive = zip::ZipArchive::new(fs::File::open(zip_path).map_err(|e| e.to_string())?)
-        .map_err(|e| e.to_string())?;
+    read_zip_entries(fs::File::open(zip_path).map_err(|e| e.to_string())?, MAX_ARCHIVE_BYTES, "ZIP exceeds 512 MB extracted size")
+}
+
+fn read_zip_entries<R: Read + Seek>(input: R, limit: u64, limit_error: &str) -> Result<BTreeMap<String, Vec<u8>>, String> {
+    let mut archive = zip::ZipArchive::new(input).map_err(|e| e.to_string())?;
     if archive.len() > MAX_ENTRIES { return Err("ZIP contains too many entries".into()); }
     let check_dir = tempfile::tempdir().map_err(|e| e.to_string())?;
     let mut files = BTreeMap::new();
@@ -113,11 +125,11 @@ fn read_zip(zip_path: &str) -> Result<BTreeMap<String, Vec<u8>>, String> {
         let name = normalize_rel_path(raw)?;
         if !seen.insert(name.to_lowercase()) { return Err("duplicate ZIP paths".into()); }
         if file.is_dir() { continue; }
-        if file.size() > MAX_ARCHIVE_BYTES - total { return Err("ZIP exceeds 512 MB extracted size".into()); }
+        if file.size() > limit - total { return Err(limit_error.into()); }
         let mut bytes = Vec::new();
-        (&mut file).take(MAX_ARCHIVE_BYTES - total + 1).read_to_end(&mut bytes).map_err(|e| e.to_string())?;
+        (&mut file).take(limit - total + 1).read_to_end(&mut bytes).map_err(|e| e.to_string())?;
         total += bytes.len() as u64;
-        if total > MAX_ARCHIVE_BYTES { return Err("ZIP exceeds 512 MB extracted size".into()); }
+        if total > limit { return Err(limit_error.into()); }
         files.insert(name, bytes);
     }
     if files.is_empty() { return Err("ZIP is empty".into()); }
@@ -126,7 +138,7 @@ fn read_zip(zip_path: &str) -> Result<BTreeMap<String, Vec<u8>>, String> {
 
 fn validate_project_files(files: &BTreeMap<String, Vec<u8>>) -> Result<SketchMeta, String> {
     let meta: SketchMeta = serde_json::from_slice(files.get("meta.json").ok_or(
-        "not a P5JS Studio project ZIP: ask the student to use Export Project ZIP; HTML conversion is planned for a later release"
+        "not a P5JS Studio project ZIP. For a classic p5.js ZIP with index.html, choose p5.js Web ZIP."
     )?).map_err(|e| format!("invalid meta.json: {e}"))?;
     if meta.files.is_empty() { return Err("project has no JavaScript files".into()); }
     let mut seen = HashSet::new();
@@ -180,13 +192,17 @@ fn import_project_into(base: &PathBuf, zip_path: &str, parent: &str, skip: bool)
     }
     let meta = validate_project_files(&files)?;
     files.insert("meta.json".into(), serde_json::to_vec_pretty(&meta).map_err(|e| e.to_string())?);
-    let dir = category_dir(base, parent)?;
     let name = Path::new(zip_path).file_stem().and_then(|s| s.to_str()).ok_or("invalid ZIP name")?;
+    install_project_files(base, &files, parent, name, skip)
+}
+
+fn install_project_files(base: &PathBuf, files: &BTreeMap<String, Vec<u8>>, parent: &str, name: &str, skip: bool) -> Result<Option<String>, String> {
+    let dir = category_dir(base, parent)?;
     let Some(name) = unique_name(&dir, name, skip)? else { return Ok(None); };
     let rel = join_rel_path(parent, &name)?;
     let target = safe_path(base, &rel)?;
     let stage = tempfile::tempdir_in(&dir).map_err(|e| e.to_string())?;
-    write_files(&stage.path().to_path_buf(), &files)?;
+    write_files(&stage.path().to_path_buf(), files)?;
     fs::rename(stage.path(), &target).map_err(|e| e.to_string())?;
     Ok(Some(rel))
 }

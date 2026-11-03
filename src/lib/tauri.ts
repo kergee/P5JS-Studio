@@ -31,6 +31,13 @@ export interface DirectoryListing {
 }
 
 export type SketchAssets = Record<string, string>;
+export interface HtmlProject {
+  files: SketchFile[];
+  libraries: string[];
+  p5Version: string;
+  assets: SketchAssets;
+  payload: string;
+}
 export interface AssetEntry { path: string; size: number }
 export interface ProjectSave {
   originalName: string | null;
@@ -52,6 +59,13 @@ export const tauriApi = {
     invoke<string[]>("add_project_assets", { name, paths, folder, overwrite }),
   removeProjectAsset: (name: string, path: string) => invoke<void>("remove_project_asset", { name, path }),
   exportProject: (name: string, destPath: string) => invoke<void>("export_project", { name, destPath }),
+  prepareHtmlExport: (name: string) => invoke<HtmlProject>("prepare_html_export", { name }),
+  writeProjectHtml: (destPath: string, page: string, payload: string) =>
+    invoke<void>("write_project_html", { destPath, page, payload }),
+  importProjectHtml: (htmlPath: string, targetFolder: string) =>
+    invoke<string>("import_project_html", { htmlPath, targetFolder }),
+  importP5WebZip: (zipPath: string, targetFolder: string) =>
+    invoke<{ path: string; sourceVersion: string; p5Version: string }>("import_p5_web_zip", { zipPath, targetFolder }),
   exportFolder: (path: string, destPath: string) => invoke<void>("export_folder", { path, destPath }),
   importProjectZip: (zipPath: string, targetFolder: string, skipExisting: boolean) =>
     invoke<string | null>("import_project_zip", { zipPath, targetFolder, skipExisting }),
