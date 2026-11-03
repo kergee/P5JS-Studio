@@ -126,7 +126,7 @@ The Resources panel manages local script declarations and their load order. It s
 
 Third-party support serves archiving and offline reproduction of existing work. P5JS Studio loads local classic scripts through one shared workflow. It does not provide a dedicated machine-learning or 3D workbench, or promise compatibility with every library, model or version. Existing ml5 path compatibility is retained.
 
-Use **Resources → Project dependencies (optional)** to select local JS files, change load order or remove declarations. Changes are saved with the project and apply on the next Run. Missing or unreadable declared scripts are listed before running. These checks do not execute libraries or prove that models, dynamic assets or online APIs work offline. Add files to the project first, or use existing shared public files.
+Open the **Dependencies** tab in the **Resources** sidebar to select local JS files, change load order, or remove declarations. A red dot marks unavailable dependencies. Changes are saved with the project and apply on the next Run. The dependency check covers declared scripts. Models, dynamic assets, and online APIs require separate offline verification. Add files to the project first, or use existing shared public files.
 
 See [optional local ml5 model configuration](docs/optional-ml5-models.en.md).
 
@@ -295,7 +295,7 @@ function preload() {
 
 ### Use Libraries
 
-Add third-party `.js` files to the project, declare and order them under Resources → Project dependencies (optional), then save and run. Shared public libraries can also be declared by closing the editor and editing the `libraries` array in `meta.json`. The listed libraries load before your sketch files and are included in ZIP backup and restore.
+Add third-party `.js` files to the project, declare and order them under **Resources → Dependencies**, then save and run. Shared public libraries can also be declared by closing the editor and editing the `libraries` array in `meta.json`. The listed libraries load before your sketch files and are included in ZIP backup and restore.
 
 ### Project Submission and Backups
 
@@ -313,7 +313,9 @@ Choose **Export Project → Export HTML** in the editor to share a single browse
 
 ### Add Local Resources
 
-Open **Resources** and select multiple files or drop files into the window. The default subfolder is `assets`. Same-name resources keep both copies unless Replace is checked. Copy relative paths for `loadImage`, `loadSound`, etc. Removal asks for confirmation and does not modify code references. Code and metadata cannot be replaced through this panel.
+Click **Resources** in the editor toolbar to open the left sidebar. **Files** and **Dependencies** have separate tabs, and the sidebar scrolls independently of the code and preview.
+
+In **Files**, choose **Add files** or drop files into the window while the sidebar is open. **Add options** sets the destination subfolder and whether to replace same-name files. The defaults are `assets` and keeping both copies. Open a file's **…** actions to see its full path, copy the relative path for functions such as `loadImage` and `loadSound`, or confirm removal. Update any code references after removing a file.
 
 ### Save and Rename
 
@@ -342,7 +344,7 @@ Two anonymous [teaching ZIPs](examples/README.md) include sketches, firmware sou
 
 **Software prototype; complete hardware acceptance remains pending. Basic C3 serial connectivity feedback does not establish acceptance of the universal firmware, buttons, LEDs or RSSI. Official v1.3.2 release installers do not include these additions. Manual Actions test packages keep version 1.3.2 and are identified by commit and run ID.**
 
-See the [desktop 1.4.0 update notes](docs/pc-update-20261103.zh-CN.md) for changes and usage. Manually run [Build & Release](https://github.com/kergee/P5JS-Studio/actions/workflows/build.yml) to build Windows by default, then download the EXE from that run's Artifacts. Local Windows builds also default to NSIS.
+See the [desktop 1.4.1 update notes](docs/pc-update-1.4.1.zh-CN.md) for the Resources sidebar. Manually run [Build & Release](https://github.com/kergee/P5JS-Studio/actions/workflows/build.yml) to build Windows by default, then download the EXE from that run's Artifacts. Local Windows builds also default to NSIS.
 
 Complete real-board bidirectional communication, busy-port/unplug/reconnect and ordinary-project regression checks before deciding on a release. Wi-Fi, multiple devices, phone USB, firmware compilation and flashing remain deferred. Mobile remains focused on organizing and running projects offline.
 

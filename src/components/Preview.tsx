@@ -246,7 +246,7 @@ export default function Preview({
 
   const renderPreviewToolbar = () => (
     <div
-      className={`absolute right-3 top-3 z-10 flex items-center gap-1 rounded border px-1.5 py-1 text-xs ${previewToolbarClass}`}
+      className={`absolute right-3 top-3 z-10 flex max-w-[calc(100%_-_1.5rem)] flex-wrap items-center justify-end gap-1 rounded border px-1.5 py-1 text-xs ${previewToolbarClass}`}
     >
       <button className={`h-6 rounded px-2 ${previewButtonClass}`} disabled={!running} onClick={stop}>{pc.stop}</button>
       <button className={`h-6 rounded px-2 ${previewButtonClass}`} onClick={() => void toggleFullscreen()}>{fullscreen ? pc.exitFullscreen : pc.fullscreen}</button>

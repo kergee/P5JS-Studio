@@ -16,7 +16,7 @@ try {
     }
     $pcPackageRecords | ForEach-Object { "$($_.sha256)  $($_.file)" } | Set-Content "$pcPackageOutput/SHA256SUMS.txt" -Encoding ascii
     [ordered]@{commit=$env:GITHUB_SHA;runId=$env:GITHUB_RUN_ID;event=$env:GITHUB_EVENT_NAME;version=$pcVersion;files=@($pcPackageRecords)} | ConvertTo-Json -Depth 5 | Set-Content "$pcPackageOutput/build-info.json" -Encoding utf8
-    Copy-Item -LiteralPath docs/pc-update-20261103.zh-CN.md -Destination "$pcPackageOutput/更新说明.md"
+    Copy-Item -LiteralPath docs/pc-update-1.4.1.zh-CN.md -Destination "$pcPackageOutput/更新说明.md"
     if ($env:GITHUB_STEP_SUMMARY) {
         @("## Windows EXE package ($pcVersion)", '', ($pcPackageRecords | ForEach-Object { "- $($_.file): $($_.size) bytes" })) | Out-File $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
     }
