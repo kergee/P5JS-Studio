@@ -230,39 +230,18 @@ src-tauri/target/release/bundle/
 
 ## GitHub Actions
 
-仓库中已经包含 `.github/workflows/build.yml`。
+[Build & Release](https://github.com/kergee/P5JS-Studio/actions/workflows/build.yml) 会构建 Windows x64 EXE、macOS 通用 DMG，以及 Linux x86-64 的 DEB 和 AppImage。
 
-该工作流会构建以下平台的发布文件：
+试用构建可在 **Run workflow** 中选择 **windows** 或 **all**，完成后到对应运行的 **Artifacts** 下载。
 
-- macOS 通用二进制。
-- Windows EXE 安装包（NSIS），不再生成 MSI。
+正式发布时，先更新应用版本与[变更日志](CHANGELOG.md)，再创建并推送与版本一致的附注标签。标签正文用于发布说明。
 
-有两种触发方式：
-
-1. 打开 GitHub 仓库，进入 **Actions**，选择 **Build & Release**，点击 **Run workflow**。
-2. 推送版本标签：
-
-```bash
-git tag v1.2.9
-git push origin v1.2.9
+```sh
+git tag -a vX.Y.Z -F release-notes.md
+git push origin vX.Y.Z
 ```
 
-推送匹配 `v*` 的 tag 后，会通过 `tauri-apps/tauri-action` 创建一个 GitHub Release。
-
-### Release Notes 和变更日志
-
-当前 workflow 会创建一个带下载说明的 GitHub Release。Action 构建完成后，可以进入 GitHub 的 Releases 页面编辑 Release，然后点击 **Generate release notes**，让 GitHub 根据合并记录和提交记录自动生成一版变更说明。
-
-一个实用发布流程是：
-
-```bash
-git tag v1.2.9
-git push origin v1.2.9
-```
-
-然后打开 **GitHub > Releases**，编辑草稿 Release，点击 **Generate release notes**，检查内容后发布。
-
-如果还想在仓库里保留独立变更日志，可以维护一个 `CHANGELOG.md`，把检查过的 release notes 复制进去。后续如果想更自动化，可以采用 Conventional Commits，再接入 `release-please` 或 `standard-version` 这类工具。
+三端构建都成功后，工作流会在 [GitHub Releases](https://github.com/kergee/P5JS-Studio/releases) 发布安装包、发布说明和 SHA-256 校验文件。
 
 ## 使用指南
 

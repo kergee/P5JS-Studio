@@ -154,7 +154,7 @@ On macOS, `Cmd+S` is also supported for saving.
 | State | Zustand |
 | p5 runtime | p5 v1 bundled locally |
 | Backend / file I/O | Rust, `std::fs`, `zip`, `base64` |
-| CI / releases | GitHub Actions, Node 22, `tauri-apps/tauri-action` |
+| CI / releases | GitHub Actions, Node 22, Tauri CLI |
 
 ## Sketch Storage
 
@@ -230,39 +230,18 @@ src-tauri/target/release/bundle/
 
 ## GitHub Actions
 
-This repository includes `.github/workflows/build.yml`.
+The [Build & Release](https://github.com/kergee/P5JS-Studio/actions/workflows/build.yml) workflow builds Windows x64 EXE, macOS universal DMG, and Linux x86-64 DEB and AppImage installers.
 
-The workflow builds release artifacts for:
+For a test build, choose **Run workflow** and select **windows** or **all**. Download the installers from that run's **Artifacts**.
 
-- macOS universal binary.
-- Windows EXE installer (NSIS). Windows builds no longer generate MSI packages.
+To publish, update the app version and [changelog](CHANGELOG.md), then push a matching annotated version tag with the release notes.
 
-You can trigger it in two ways:
-
-1. Open the GitHub repository, go to **Actions**, choose **Build & Release**, then click **Run workflow**.
-2. Push a version tag:
-
-```bash
-git tag v1.2.9
-git push origin v1.2.9
+```sh
+git tag -a vX.Y.Z -F release-notes.md
+git push origin vX.Y.Z
 ```
 
-Tag pushes matching `v*` create a GitHub Release through `tauri-apps/tauri-action`.
-
-### Release Notes and Changelog
-
-The current workflow creates a GitHub Release with a fixed download section. After the build finishes, you can edit the release on GitHub and click **Generate release notes** to let GitHub create a changelog from merged commits and pull requests.
-
-A practical release flow is:
-
-```bash
-git tag v1.2.9
-git push origin v1.2.9
-```
-
-Then open **GitHub > Releases**, edit the draft release, click **Generate release notes**, review the generated text, and publish the release.
-
-If you want a repository changelog file as well, keep a `CHANGELOG.md` and copy the reviewed release notes into it before tagging the next release. For a more automated setup later, use Conventional Commits plus a tool such as `release-please` or `standard-version`.
+The workflow publishes to [GitHub Releases](https://github.com/kergee/P5JS-Studio/releases) after all three builds succeed. The release includes the tag's notes and installer SHA-256 checksums.
 
 ## Usage Guide
 
